@@ -108,6 +108,7 @@
     }
     #lp-chat-welcome.lp-welcome-hidden { display: none; }
     @media (max-width: 500px) {
+      #lp-chat-window { bottom: 50px; }
       #lp-chat-welcome { padding: 12px 16px 10px; }
       #lp-chat-welcome img { display: none; }
       #lp-chat-welcome h3 { font-size: 15px; }
