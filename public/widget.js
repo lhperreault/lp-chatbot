@@ -6,26 +6,34 @@
  */
 
 (function () {
-  const API_URL = document.currentScript?.src
-    ? new URL(document.currentScript.src).origin + "/api/chat"
-    : "/api/chat";
+  const ORIGIN = document.currentScript?.src
+    ? new URL(document.currentScript.src).origin
+    : "";
+  const API_URL  = ORIGIN + "/api/chat";
+  const LOGO_URL = ORIGIN + "/logo.png";
 
   const style = document.createElement("style");
   style.textContent = `
     #lp-chat-bubble {
       position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-      width: 60px; height: 60px; border-radius: 50%;
-      background: #2563eb; color: #fff; border: none;
+      width: 64px; height: 64px; border-radius: 50%;
+      background: #1e3a5f; border: none; padding: 0;
       box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-      cursor: pointer; font-size: 26px;
+      cursor: pointer; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
       transition: transform 0.2s;
     }
     #lp-chat-bubble:hover { transform: scale(1.08); }
+    #lp-chat-bubble img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    #lp-chat-bubble.lp-open {
+      background: #1e3a5f; font-size: 28px; color: #fff;
+    }
     #lp-chat-window {
-      position: fixed; bottom: 96px; right: 24px; z-index: 9999;
-      width: 360px; max-width: calc(100vw - 32px);
-      height: 520px; max-height: calc(100vh - 120px);
+      position: fixed; bottom: 100px; right: 24px; z-index: 9999;
+      width: 370px; max-width: calc(100vw - 32px);
+      height: 540px; max-height: calc(100vh - 120px);
       background: #fff; border-radius: 16px;
       box-shadow: 0 8px 40px rgba(0,0,0,0.18);
       display: flex; flex-direction: column; overflow: hidden;
@@ -36,8 +44,8 @@
       opacity: 0; transform: translateY(12px); pointer-events: none;
     }
     #lp-chat-header {
-      background: #2563eb; color: #fff;
-      padding: 14px 18px; display: flex; align-items: center; gap: 10px;
+      background: #1e3a5f; color: #fff;
+      padding: 10px 18px; display: flex; align-items: center; gap: 10px;
       flex-shrink: 0;
     }
     #lp-chat-header-text h4 { margin: 0; font-size: 15px; font-weight: 600; }
@@ -48,6 +56,27 @@
       opacity: 0.8; line-height: 1;
     }
     #lp-chat-close:hover { opacity: 1; }
+
+    /* Welcome hero area */
+    #lp-chat-welcome {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 24px 20px 16px; background: #f8fafc; flex-shrink: 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    #lp-chat-welcome img {
+      width: 64px; height: 64px; border-radius: 50%;
+      object-fit: cover; margin-bottom: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    #lp-chat-welcome h3 {
+      margin: 0; font-size: 17px; font-weight: 700; color: #1e293b;
+    }
+    #lp-chat-welcome p {
+      margin: 4px 0 0; font-size: 13px; color: #64748b;
+      text-align: center; line-height: 1.4;
+    }
+    #lp-chat-welcome.lp-welcome-hidden { display: none; }
+
     #lp-chat-messages {
       flex: 1; overflow-y: auto; padding: 16px;
       display: flex; flex-direction: column; gap: 10px;
@@ -55,8 +84,18 @@
     }
     #lp-chat-messages::-webkit-scrollbar { width: 4px; }
     #lp-chat-messages::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+    /* Bot message row: avatar + bubble */
+    .lp-msg-row {
+      display: flex; align-items: flex-end; gap: 8px;
+      align-self: flex-start; max-width: 88%;
+    }
+    .lp-msg-avatar {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      object-fit: cover;
+    }
     .lp-msg {
-      max-width: 82%; padding: 10px 14px;
+      padding: 10px 14px;
       border-radius: 14px; font-size: 14px; line-height: 1.5;
       word-break: break-word; white-space: pre-wrap;
     }
@@ -64,18 +103,37 @@
       background: #fff; color: #1e293b;
       border-bottom-left-radius: 4px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.07);
-      align-self: flex-start;
     }
     .lp-msg-user {
       background: #2563eb; color: #fff;
       border-bottom-right-radius: 4px;
-      align-self: flex-end;
+      align-self: flex-end; max-width: 82%;
     }
+
+    /* Suggestion buttons */
+    .lp-suggestions {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      align-self: flex-start; padding-left: 36px;
+    }
+    .lp-suggestion-btn {
+      background: #fff; color: #2563eb; border: 1.5px solid #2563eb;
+      border-radius: 20px; padding: 6px 14px; font-size: 13px;
+      cursor: pointer; font-family: inherit;
+      transition: background 0.15s, color 0.15s;
+    }
+    .lp-suggestion-btn:hover {
+      background: #2563eb; color: #fff;
+    }
+
     .lp-typing {
       display: flex; gap: 4px; align-items: center;
       padding: 10px 14px; background: #fff;
       border-radius: 14px; border-bottom-left-radius: 4px;
-      align-self: flex-start; box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    }
+    .lp-typing-row {
+      display: flex; align-items: flex-end; gap: 8px;
+      align-self: flex-start;
     }
     .lp-typing span {
       width: 7px; height: 7px; background: #94a3b8;
@@ -116,7 +174,7 @@
   const bubble = document.createElement("button");
   bubble.id = "lp-chat-bubble";
   bubble.setAttribute("aria-label", "Open chat");
-  bubble.textContent = "\uD83D\uDCAC";
+  bubble.innerHTML = `<img src="${LOGO_URL}" alt="LP Pressure Washing">`;
 
   const win = document.createElement("div");
   win.id = "lp-chat-window";
@@ -129,6 +187,11 @@
       </div>
       <button id="lp-chat-close" aria-label="Close chat">\u2715</button>
     </div>
+    <div id="lp-chat-welcome">
+      <img src="${LOGO_URL}" alt="LP Pressure Washing">
+      <h3>LP AI Assistant</h3>
+      <p>Try our LP instant quote calculator.<br>Ask us a question!</p>
+    </div>
     <div id="lp-chat-messages"></div>
     <div id="lp-chat-input-row">
       <textarea id="lp-chat-input" rows="1" placeholder="Type a message..."></textarea>
@@ -140,30 +203,66 @@
   document.body.appendChild(bubble);
   document.body.appendChild(win);
 
-  const messages  = [];
-  let   isOpen    = false;
-  let   isWaiting = false;
-  let   greeted   = false;
+  const messages    = [];
+  let   isOpen      = false;
+  let   isWaiting   = false;
+  let   greeted     = false;
+  let   welcomeHidden = false;
 
-  const messagesEl = win.querySelector("#lp-chat-messages");
-  const inputEl    = win.querySelector("#lp-chat-input");
-  const sendBtn    = win.querySelector("#lp-chat-send");
+  const messagesEl  = win.querySelector("#lp-chat-messages");
+  const welcomeEl   = win.querySelector("#lp-chat-welcome");
+  const inputEl     = win.querySelector("#lp-chat-input");
+  const sendBtn     = win.querySelector("#lp-chat-send");
+
+  function hideWelcome() {
+    if (!welcomeHidden) {
+      welcomeHidden = true;
+      welcomeEl.classList.add("lp-welcome-hidden");
+    }
+  }
 
   function addMessage(role, text) {
-    const div  = document.createElement("div");
-    div.className = `lp-msg lp-msg-${role === "user" ? "user" : "bot"}`;
-    div.textContent = text;
-    messagesEl.appendChild(div);
+    if (role === "user") {
+      const div = document.createElement("div");
+      div.className = "lp-msg lp-msg-user";
+      div.textContent = text;
+      messagesEl.appendChild(div);
+    } else {
+      const row = document.createElement("div");
+      row.className = "lp-msg-row";
+      row.innerHTML = `<img class="lp-msg-avatar" src="${LOGO_URL}" alt="LP">`;
+      const bubble = document.createElement("div");
+      bubble.className = "lp-msg lp-msg-bot";
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+    }
     messagesEl.scrollTop = messagesEl.scrollHeight;
-    return div;
+  }
+
+  function addSuggestions(options) {
+    const container = document.createElement("div");
+    container.className = "lp-suggestions";
+    options.forEach((opt) => {
+      const btn = document.createElement("button");
+      btn.className = "lp-suggestion-btn";
+      btn.textContent = opt;
+      btn.addEventListener("click", () => {
+        container.remove();
+        sendMessage(opt);
+      });
+      container.appendChild(btn);
+    });
+    messagesEl.appendChild(container);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function showTyping() {
-    const el = document.createElement("div");
-    el.className  = "lp-typing";
-    el.id         = "lp-typing-indicator";
-    el.innerHTML  = "<span></span><span></span><span></span>";
-    messagesEl.appendChild(el);
+    const row = document.createElement("div");
+    row.className = "lp-typing-row";
+    row.id = "lp-typing-indicator";
+    row.innerHTML = `<img class="lp-msg-avatar" src="${LOGO_URL}" alt="LP"><div class="lp-typing"><span></span><span></span><span></span></div>`;
+    messagesEl.appendChild(row);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
@@ -171,8 +270,51 @@
     document.getElementById("lp-typing-indicator")?.remove();
   }
 
+  // Detect which suggestions to show based on bot reply
+  function detectSuggestions(reply, msgIndex) {
+    const lower = reply.toLowerCase();
+    // After greeting (first bot message) — show service options
+    if (msgIndex === 0) {
+      return null; // greeting asks for name, no suggestions needed
+    }
+    // When asking what they want cleaned
+    if (lower.includes("what would you like cleaned") || lower.includes("what can i help") || lower.includes("what service") || lower.includes("what are you looking")) {
+      return ["\uD83C\uDFE0 House Wash", "\uD83E\uDEB5 Deck Cleaning", "\uD83E\uDDF1 Patio/Walkway", "\uD83C\uDFD7\uFE0F Fence", "\uD83E\uDEA3 Gutters"];
+    }
+    // When asking about stories
+    if (lower.includes("how many stories") || lower.includes("how many floors")) {
+      return ["1 Story", "2 Stories", "3 Stories"];
+    }
+    // When asking about material
+    if (lower.includes("primary material") || lower.includes("what material") || lower.includes("what type of material")) {
+      return ["Vinyl", "Wood", "Brick/Stone", "Stucco", "Composite"];
+    }
+    // When asking about condition / last cleaning
+    if (lower.includes("last cleaning") || lower.includes("how long has it been") || lower.includes("last time")) {
+      return ["Less than 1 year", "1-2 years", "3+ years", "Never"];
+    }
+    // When asking about deck material
+    if (lower.includes("deck") && (lower.includes("material") || lower.includes("type"))) {
+      return ["\uD83E\uDEB5 Wood", "Composite/Trek", "Vinyl/PVC"];
+    }
+    // When asking about fence material
+    if (lower.includes("fence") && (lower.includes("material") || lower.includes("type"))) {
+      return ["Wood", "Vinyl", "Metal"];
+    }
+    // When asking about patio material
+    if ((lower.includes("patio") || lower.includes("walkway")) && (lower.includes("material") || lower.includes("type"))) {
+      return ["Concrete", "Pavers/Brick", "Stone Slab"];
+    }
+    return null;
+  }
+
+  let botMsgCount = 0;
+
   async function sendMessage(text) {
     if (!text.trim() || isWaiting) return;
+    hideWelcome();
+    // Remove any existing suggestion buttons
+    messagesEl.querySelectorAll(".lp-suggestions").forEach((el) => el.remove());
     addMessage("user", text.trim());
     messages.push({ role: "user", content: text.trim() });
     inputEl.value = "";
@@ -191,6 +333,10 @@
       const reply = data.reply || "Sorry, something went wrong. Please try again!";
       addMessage("bot", reply);
       messages.push({ role: "assistant", content: reply });
+      // Show suggestion buttons if appropriate
+      const suggestions = detectSuggestions(reply, botMsgCount);
+      if (suggestions) addSuggestions(suggestions);
+      botMsgCount++;
     } catch {
       hideTyping();
       addMessage("bot", "Sorry, I couldn't connect. Please check your internet and try again.");
@@ -203,13 +349,14 @@
   async function openChat() {
     isOpen = true;
     win.classList.remove("lp-hidden");
-    bubble.textContent = "\u2715";
+    bubble.innerHTML = `<span style="font-size:28px;color:#fff;">\u2715</span>`;
+    bubble.classList.add("lp-open");
     if (!greeted) {
       greeted = true;
       showTyping();
       await new Promise((r) => setTimeout(r, 900));
       hideTyping();
-      const greeting = "Hey there! Welcome to LP Pressure Washing!\nI'm here to get you a fast, accurate quote and answer any questions - usually takes less than 2 minutes!\n\nBefore we dive in... What's your first name?";
+      const greeting = "Hey \uD83D\uDC4B! Welcome to LP Pressure Washing!\nI'm here to get you a fast, accurate quote and answer any questions - usually takes less than 2 minutes!\n\nBefore we dive in... What's your first name?";
       addMessage("bot", greeting);
       messages.push({ role: "assistant", content: greeting });
     }
@@ -219,7 +366,8 @@
   function closeChat() {
     isOpen = false;
     win.classList.add("lp-hidden");
-    bubble.textContent = "\uD83D\uDCAC";
+    bubble.innerHTML = `<img src="${LOGO_URL}" alt="LP Pressure Washing">`;
+    bubble.classList.remove("lp-open");
   }
 
   bubble.addEventListener("click", () => (isOpen ? closeChat() : openChat()));
