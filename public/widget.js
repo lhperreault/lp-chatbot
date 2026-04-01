@@ -32,7 +32,7 @@
     }
     #lp-chat-window {
       position: fixed; bottom: 100px; right: 24px; z-index: 9999;
-      width: 370px; max-width: calc(100vw - 32px);
+      width: 420px; max-width: calc(100vw - 32px);
       height: 540px; max-height: calc(100vh - 120px);
       background: #fff; border-radius: 16px;
       box-shadow: 0 8px 40px rgba(0,0,0,0.18);
@@ -47,6 +47,10 @@
       background: #1e3a5f; color: #fff;
       padding: 10px 18px; display: flex; align-items: center; gap: 10px;
       flex-shrink: 0;
+    }
+    #lp-chat-header-logo {
+      width: 36px; height: 36px; border-radius: 50%;
+      object-fit: cover; flex-shrink: 0;
     }
     #lp-chat-header-text h4 { margin: 0; font-size: 15px; font-weight: 600; }
     #lp-chat-header-text p  { margin: 0; font-size: 12px; opacity: 0.85; }
@@ -116,13 +120,26 @@
       align-self: flex-start; padding-left: 36px;
     }
     .lp-suggestion-btn {
-      background: #fff; color: #2563eb; border: 1.5px solid #2563eb;
+      background: #fff; color: #64748b; border: 1.5px solid #cbd5e1;
       border-radius: 20px; padding: 6px 14px; font-size: 13px;
       cursor: pointer; font-family: inherit;
-      transition: background 0.15s, color 0.15s;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
     }
     .lp-suggestion-btn:hover {
-      background: #2563eb; color: #fff;
+      background: #f1f5f9; color: #1e293b; border-color: #94a3b8;
+    }
+
+    /* Calculating animation */
+    .lp-status-row {
+      display: flex; align-items: flex-end; gap: 8px;
+      align-self: flex-start;
+    }
+    .lp-status-msg {
+      padding: 10px 14px; background: #fff;
+      border-radius: 14px; border-bottom-left-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      font-size: 14px; color: #94a3b8; font-style: italic;
+      transition: opacity 0.3s;
     }
 
     .lp-typing {
@@ -181,6 +198,7 @@
   win.classList.add("lp-hidden");
   win.innerHTML = `
     <div id="lp-chat-header">
+      <img id="lp-chat-header-logo" src="${LOGO_URL}" alt="LP">
       <div id="lp-chat-header-text">
         <h4>LP Pressure Washing</h4>
         <p>Online - usually replies instantly</p>
@@ -231,10 +249,10 @@
       const row = document.createElement("div");
       row.className = "lp-msg-row";
       row.innerHTML = `<img class="lp-msg-avatar" src="${LOGO_URL}" alt="LP">`;
-      const bubble = document.createElement("div");
-      bubble.className = "lp-msg lp-msg-bot";
-      bubble.textContent = text;
-      row.appendChild(bubble);
+      const msgBubble = document.createElement("div");
+      msgBubble.className = "lp-msg lp-msg-bot";
+      msgBubble.textContent = text;
+      row.appendChild(msgBubble);
       messagesEl.appendChild(row);
     }
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -270,50 +288,64 @@
     document.getElementById("lp-typing-indicator")?.remove();
   }
 
+  // Calculating animation — cycles through status words
+  async function showCalculating() {
+    const steps = ["Surveying the home...", "Measuring...", "Calculating..."];
+    const row = document.createElement("div");
+    row.className = "lp-status-row";
+    row.id = "lp-calc-indicator";
+    row.innerHTML = `<img class="lp-msg-avatar" src="${LOGO_URL}" alt="LP">`;
+    const statusEl = document.createElement("div");
+    statusEl.className = "lp-status-msg";
+    row.appendChild(statusEl);
+    messagesEl.appendChild(row);
+
+    for (let i = 0; i < steps.length; i++) {
+      statusEl.textContent = steps[i];
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      await new Promise((r) => setTimeout(r, 1300));
+    }
+  }
+
+  function hideCalculating() {
+    document.getElementById("lp-calc-indicator")?.remove();
+  }
+
+  // Check if the reply contains a price quote
+  function replyHasQuote(text) {
+    return /\$\d{2,}/.test(text) && /estimat|price|quote|total/i.test(text);
+  }
+
   // Detect which suggestions to show based on bot reply
-  function detectSuggestions(reply, msgIndex) {
+  function detectSuggestions(reply) {
     const lower = reply.toLowerCase();
-    // After greeting (first bot message) — show service options
-    if (msgIndex === 0) {
-      return null; // greeting asks for name, no suggestions needed
+    if (lower.includes("what do you want cleaned") || lower.includes("what would you like cleaned") || lower.includes("what can i help") || lower.includes("what service") || lower.includes("what are you looking")) {
+      return ["house exterior", "deck, porch", "patio, slab, brick, stone, pavers, sidewalk", "fencing", "clean out gutters"];
     }
-    // When asking what they want cleaned
-    if (lower.includes("what would you like cleaned") || lower.includes("what can i help") || lower.includes("what service") || lower.includes("what are you looking")) {
-      return ["\uD83C\uDFE0 House Wash", "\uD83E\uDEB5 Deck Cleaning", "\uD83E\uDDF1 Patio/Walkway", "\uD83C\uDFD7\uFE0F Fence", "\uD83E\uDEA3 Gutters"];
-    }
-    // When asking about stories
     if (lower.includes("how many stories") || lower.includes("how many floors")) {
       return ["1 Story", "2 Stories", "3 Stories"];
     }
-    // When asking about material
-    if (lower.includes("primary material") || lower.includes("what material") || lower.includes("what type of material")) {
+    if (lower.includes("primary material") || lower.includes("what material") || lower.includes("what type of material") || lower.includes("what is the siding")) {
       return ["Vinyl", "Wood", "Brick/Stone", "Stucco", "Composite"];
     }
-    // When asking about condition / last cleaning
-    if (lower.includes("last cleaning") || lower.includes("how long has it been") || lower.includes("last time")) {
+    if (lower.includes("last cleaning") || lower.includes("how long has it been") || lower.includes("last time") || lower.includes("when was the last")) {
       return ["Less than 1 year", "1-2 years", "3+ years", "Never"];
     }
-    // When asking about deck material
     if (lower.includes("deck") && (lower.includes("material") || lower.includes("type"))) {
-      return ["\uD83E\uDEB5 Wood", "Composite/Trek", "Vinyl/PVC"];
+      return ["Wood", "Composite/Trek", "Vinyl/PVC"];
     }
-    // When asking about fence material
     if (lower.includes("fence") && (lower.includes("material") || lower.includes("type"))) {
       return ["Wood", "Vinyl", "Metal"];
     }
-    // When asking about patio material
     if ((lower.includes("patio") || lower.includes("walkway")) && (lower.includes("material") || lower.includes("type"))) {
       return ["Concrete", "Pavers/Brick", "Stone Slab"];
     }
     return null;
   }
 
-  let botMsgCount = 0;
-
   async function sendMessage(text) {
     if (!text.trim() || isWaiting) return;
     hideWelcome();
-    // Remove any existing suggestion buttons
     messagesEl.querySelectorAll(".lp-suggestions").forEach((el) => el.remove());
     addMessage("user", text.trim());
     messages.push({ role: "user", content: text.trim() });
@@ -331,12 +363,17 @@
       const data = await res.json();
       hideTyping();
       const reply = data.reply || "Sorry, something went wrong. Please try again!";
+
+      // If the reply has a price quote, show calculating animation first
+      if (replyHasQuote(reply)) {
+        await showCalculating();
+        hideCalculating();
+      }
+
       addMessage("bot", reply);
       messages.push({ role: "assistant", content: reply });
-      // Show suggestion buttons if appropriate
-      const suggestions = detectSuggestions(reply, botMsgCount);
+      const suggestions = detectSuggestions(reply);
       if (suggestions) addSuggestions(suggestions);
-      botMsgCount++;
     } catch {
       hideTyping();
       addMessage("bot", "Sorry, I couldn't connect. Please check your internet and try again.");
@@ -353,9 +390,6 @@
     bubble.classList.add("lp-open");
     if (!greeted) {
       greeted = true;
-      showTyping();
-      await new Promise((r) => setTimeout(r, 900));
-      hideTyping();
       const greeting = "Hey \uD83D\uDC4B! Welcome to LP Pressure Washing!\nI'm here to get you a fast, accurate quote and answer any questions - usually takes less than 2 minutes!\n\nBefore we dive in... What's your first name?";
       addMessage("bot", greeting);
       messages.push({ role: "assistant", content: greeting });
