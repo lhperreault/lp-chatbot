@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LP Pressure Washing Chat</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #fff; display: flex; flex-direction: column;
+  }
+
+  #lp-embed-header {
+    background: #1e3a5f; color: #fff;
+    padding: 10px 18px; display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+  }
+  #lp-embed-header img {
+    width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+  }
+  #lp-embed-header h4 { margin: 0; font-size: 15px; font-weight: 600; }
+  #lp-embed-header p { margin: 0; font-size: 12px; opacity: 0.85; }
+
+  #lp-embed-welcome {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 20px 16px; background: #f8fafc; flex-shrink: 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  #lp-embed-welcome img {
+    width: 64px; height: 64px; border-radius: 50%;
+    object-fit: cover; margin-bottom: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  #lp-embed-welcome h3 { margin: 0; font-size: 17px; font-weight: 700; color: #1e293b; }
+  #lp-embed-welcome p { margin: 4px 0 0; font-size: 13px; color: #64748b; text-align: center; line-height: 1.4; }
+  #lp-embed-welcome.hidden { display: none; }
+
+  #lp-embed-messages {
+    flex: 1; overflow-y: auto; padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+    background: #f8fafc;
+  }
+  #lp-embed-messages::-webkit-scrollbar { width: 4px; }
+  #lp-embed-messages::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+  .lp-msg-row {
+    display: flex; align-items: flex-end; gap: 8px;
+    align-self: flex-start; max-width: 88%;
+  }
+  .lp-msg-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; object-fit: cover;
+  }
+  .lp-msg {
+    padding: 10px 14px; border-radius: 14px; font-size: 14px;
+    line-height: 1.5; word-break: break-word; white-space: pre-wrap;
+  }
+  .lp-msg-bot {
+    background: #fff; color: #1e293b;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  }
+  .lp-msg-user {
+    background: #2563eb; color: #fff;
+    border-bottom-right-radius: 4px;
+    align-self: flex-end; max-width: 82%;
+  }
+
+  .lp-suggestions {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    align-self: flex-start; padding-left: 36px;
+  }
+  .lp-suggestion-btn {
+    background: #fff; color: #64748b; border: 1.5px solid #cbd5e1;
+    border-radius: 20px; padding: 6px 14px; font-size: 13px;
+    cursor: pointer; font-family: inherit;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .lp-suggestion-btn:hover {
+    background: #f1f5f9; color: #1e293b; border-color: #94a3b8;
+  }
+
+  .lp-status-row { display: flex; align-items: flex-end; gap: 8px; align-self: flex-start; }
+  .lp-status-msg {
+    padding: 10px 14px; background: #fff;
+    border-radius: 14px; border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    font-size: 14px; color: #94a3b8; font-style: italic;
+  }
+
+  .lp-typing-row { display: flex; align-items: flex-end; gap: 8px; align-self: flex-start; }
+  .lp-typing {
+    display: flex; gap: 4px; align-items: center;
+    padding: 10px 14px; background: #fff;
+    border-radius: 14px; border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  }
+  .lp-typing span {
+    width: 7px; height: 7px; background: #94a3b8;
+    border-radius: 50%; animation: lp-bounce 1.2s infinite;
+  }
+  .lp-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .lp-typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes lp-bounce {
+    0%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-6px); }
+  }
+
+  #lp-embed-input-row {
+    display: flex; gap: 8px; padding: 12px;
+    background: #fff; border-top: 1px solid #e2e8f0; flex-shrink: 0;
+  }
+  #lp-embed-input {
+    flex: 1; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 9px 13px; font-size: 14px; outline: none;
+    resize: none; font-family: inherit; line-height: 1.4;
+    max-height: 90px; overflow-y: auto;
+  }
+  #lp-embed-input:focus { border-color: #2563eb; }
+  #lp-embed-send {
+    background: #2563eb; color: #fff; border: none;
+    border-radius: 10px; padding: 0 14px;
+    cursor: pointer; font-size: 18px; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  #lp-embed-send:hover { background: #1d4ed8; }
+  #lp-embed-send:disabled { background: #93c5fd; cursor: not-allowed; }
+
+  #lp-embed-footer {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 4px 0 8px; background: #fff; flex-shrink: 0;
+    font-size: 11px; color: #94a3b8;
+  }
+  #lp-embed-reset {
+    background: none; border: none; color: #cbd5e1;
+    font-size: 13px; cursor: pointer; padding: 0 4px;
+    transition: color 0.15s; line-height: 1;
+  }
+  #lp-embed-reset:hover { color: #94a3b8; }
+  #lp-embed-reset-confirm {
+    display: none; font-size: 11px; color: #ef4444;
+    cursor: pointer; background: none; border: none;
+    font-family: inherit; padding: 0 4px;
+  }
+  #lp-embed-reset-confirm:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div id="lp-embed-header">
+  <img src="/logo.png" alt="LP">
+  <div>
+    <h4>LP Pressure Washing</h4>
+    <p>Online - usually replies instantly</p>
+  </div>
+</div>
+
+<div id="lp-embed-welcome">
+  <img src="/logo.png" alt="LP Pressure Washing">
+  <h3>LP AI Assistant</h3>
+  <p>Try our LP instant quote calculator.<br>Ask us a question!</p>
+</div>
+
+<div id="lp-embed-messages"></div>
+
+<div id="lp-embed-input-row">
+  <textarea id="lp-embed-input" rows="1" placeholder="Type a message..."></textarea>
+  <button id="lp-embed-send" aria-label="Send">&#10148;</button>
+</div>
+
+<div id="lp-embed-footer">
+  <span>Powered by LP Pressure Washing AI</span>
+  <button id="lp-embed-reset" title="Reset chat">&#8635;</button>
+  <button id="lp-embed-reset-confirm">Reset chat?</button>
+</div>
+
+<script>
+(function () {
+  const API_URL     = "/api/chat";
+  const LOGO_URL    = "/logo.png";
+  const STORAGE_KEY = "lp-chat-session";
+
+  function saveSession() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ messages, ts: Date.now() })); } catch {}
+  }
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      const saved = new Date(data.ts);
+      if (saved.toDateString() !== new Date().toDateString()) {
+        localStorage.removeItem(STORAGE_KEY);
+        return null;
+      }
+      return data.messages || null;
+    } catch { return null; }
+  }
+  function clearSession() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  }
+
+  const messages   = [];
+  let isWaiting    = false;
+  let welcomeHidden = false;
+
+  const messagesEl    = document.getElementById("lp-embed-messages");
+  const welcomeEl     = document.getElementById("lp-embed-welcome");
+  const inputEl       = document.getElementById("lp-embed-input");
+  const sendBtn       = document.getElementById("lp-embed-send");
+  const resetBtn      = document.getElementById("lp-embed-reset");
+  const resetConfirm  = document.getElementById("lp-embed-reset-confirm");
+
+  function hideWelcome() {
+    if (!welcomeHidden) { welcomeHidden = true; welcomeEl.classList.add("hidden"); }
+  }
+
+  function addMessage(role, text) {
+    if (role === "user") {
+      const div = document.createElement("div");
+      div.className = "lp-msg lp-msg-user";
+      div.textContent = text;
+      messagesEl.appendChild(div);
+    } else {
+      const row = document.createElement("div");
+      row.className = "lp-msg-row";
+      row.innerHTML = '<img class="lp-msg-avatar" src="' + LOGO_URL + '" alt="LP">';
+      const b = document.createElement("div");
+      b.className = "lp-msg lp-msg-bot";
+      b.textContent = text;
+      row.appendChild(b);
+      messagesEl.appendChild(row);
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function addSuggestions(options) {
+    const c = document.createElement("div");
+    c.className = "lp-suggestions";
+    options.forEach(function (opt) {
+      const btn = document.createElement("button");
+      btn.className = "lp-suggestion-btn";
+      btn.textContent = opt;
+      btn.addEventListener("click", function () { c.remove(); sendMessage(opt); });
+      c.appendChild(btn);
+    });
+    messagesEl.appendChild(c);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function showTyping() {
+    const row = document.createElement("div");
+    row.className = "lp-typing-row";
+    row.id = "lp-typing-indicator";
+    row.innerHTML = '<img class="lp-msg-avatar" src="' + LOGO_URL + '" alt="LP"><div class="lp-typing"><span></span><span></span><span></span></div>';
+    messagesEl.appendChild(row);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  function hideTyping() {
+    var el = document.getElementById("lp-typing-indicator");
+    if (el) el.remove();
+  }
+
+  async function showCalculating() {
+    const steps = ["Surveying the home...", "Measuring...", "Calculating..."];
+    const row = document.createElement("div");
+    row.className = "lp-status-row";
+    row.id = "lp-calc-indicator";
+    row.innerHTML = '<img class="lp-msg-avatar" src="' + LOGO_URL + '" alt="LP">';
+    const s = document.createElement("div");
+    s.className = "lp-status-msg";
+    row.appendChild(s);
+    messagesEl.appendChild(row);
+    for (let i = 0; i < steps.length; i++) {
+      s.textContent = steps[i];
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      await new Promise(function (r) { setTimeout(r, 1300); });
+    }
+  }
+  function hideCalculating() {
+    var el = document.getElementById("lp-calc-indicator");
+    if (el) el.remove();
+  }
+
+  function replyHasQuote(text) {
+    return /\$\d{2,}/.test(text) && /estimat|price|quote|total/i.test(text);
+  }
+
+  function detectSuggestions(reply) {
+    var l = reply.toLowerCase();
+    if (l.includes("what do you want cleaned") || l.includes("what would you like cleaned") || l.includes("what can i help") || l.includes("what service") || l.includes("what are you looking"))
+      return ["house exterior", "deck, porch", "patio, slab, brick, stone, pavers, sidewalk", "fencing", "clean out gutters"];
+    if (l.includes("how many stories") || l.includes("how many floors"))
+      return ["1 Story", "2 Stories", "3 Stories"];
+    if (l.includes("primary material") || l.includes("what material") || l.includes("what type of material") || l.includes("what is the siding"))
+      return ["Vinyl", "Wood", "Brick/Stone", "Stucco", "Composite"];
+    if (l.includes("last cleaning") || l.includes("how long has it been") || l.includes("last time") || l.includes("when was the last"))
+      return ["Less than 1 year", "1-2 years", "3+ years", "Never"];
+    if (l.includes("deck") && (l.includes("material") || l.includes("type")))
+      return ["Wood", "Composite/Trek", "Vinyl/PVC"];
+    if (l.includes("fence") && (l.includes("material") || l.includes("type")))
+      return ["Wood", "Vinyl", "Metal"];
+    if ((l.includes("patio") || l.includes("walkway")) && (l.includes("material") || l.includes("type")))
+      return ["Concrete", "Pavers/Brick", "Stone Slab"];
+    return null;
+  }
+
+  async function sendMessage(text) {
+    if (!text.trim() || isWaiting) return;
+    hideWelcome();
+    messagesEl.querySelectorAll(".lp-suggestions").forEach(function (el) { el.remove(); });
+    addMessage("user", text.trim());
+    messages.push({ role: "user", content: text.trim() });
+    saveSession();
+    inputEl.value = "";
+    inputEl.style.height = "auto";
+    isWaiting = true;
+    sendBtn.disabled = true;
+    showTyping();
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages }),
+      });
+      const data = await res.json();
+      hideTyping();
+      const reply = data.reply || "Sorry, something went wrong. Please try again!";
+      if (replyHasQuote(reply)) { await showCalculating(); hideCalculating(); }
+      addMessage("bot", reply);
+      messages.push({ role: "assistant", content: reply });
+      saveSession();
+      const suggestions = detectSuggestions(reply);
+      if (suggestions) addSuggestions(suggestions);
+    } catch (e) {
+      hideTyping();
+      addMessage("bot", "Sorry, I couldn't connect. Please check your internet and try again.");
+    }
+    isWaiting = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+
+  function restoreSession(saved) {
+    welcomeHidden = true;
+    welcomeEl.classList.add("hidden");
+    saved.forEach(function (msg) {
+      messages.push(msg);
+      addMessage(msg.role === "user" ? "user" : "bot", msg.content);
+    });
+  }
+
+  function greet() {
+    var greeting = "Hey \uD83D\uDC4B! Welcome to LP Pressure Washing!\nI'm here to get you a fast, accurate quote and answer any questions - usually takes less than 2 minutes!\n\nBefore we dive in... What's your first name?";
+    addMessage("bot", greeting);
+    messages.push({ role: "assistant", content: greeting });
+    saveSession();
+  }
+
+  function resetChat() {
+    messages.length = 0;
+    messagesEl.innerHTML = "";
+    welcomeHidden = false;
+    welcomeEl.classList.remove("hidden");
+    clearSession();
+    resetConfirm.style.display = "none";
+    resetBtn.style.display = "";
+    greet();
+  }
+
+  resetBtn.addEventListener("click", function () {
+    resetBtn.style.display = "none";
+    resetConfirm.style.display = "inline";
+    setTimeout(function () { resetConfirm.style.display = "none"; resetBtn.style.display = ""; }, 3000);
+  });
+  resetConfirm.addEventListener("click", resetChat);
+
+  sendBtn.addEventListener("click", function () { sendMessage(inputEl.value); });
+  inputEl.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(inputEl.value); }
+  });
+  inputEl.addEventListener("input", function () {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 90) + "px";
+  });
+
+  // Init
+  var saved = loadSession();
+  if (saved && saved.length > 0) { restoreSession(saved); } else { greet(); }
+})();
+</script>
+</body>
+</html>
