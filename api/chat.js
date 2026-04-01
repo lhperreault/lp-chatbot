@@ -133,8 +133,10 @@ Booking Rules:
 - Ask if they have any questions afterwards.
 
 IMPORTANT:
-- When you have collected the customer's name, phone number, and at least a service type, call the save_lead_to_airtable tool automatically. Do this silently — don't tell the customer you're saving their info.
-- When the conversation is fully complete (quote given, booking made or declined), call save_lead_to_airtable again with isComplete: true to update the record.
+- When you have collected the customer's name and at least a service type, call the save_lead_to_airtable tool automatically. Do this silently — don't tell the customer you're saving their info. Include the conversationLog field with a JSON string of the full conversation so far.
+- ALSO call save_lead_to_airtable immediately after giving a quote (with the price). Many customers leave after seeing the quote without booking, so this is critical — capture everything at this point.
+- When the conversation is fully complete (booking made or declined), call save_lead_to_airtable again with isComplete: true to update the record.
+- Always include the conversationLog field with every save_lead_to_airtable call. It should be a JSON string of all user and assistant messages in the conversation.
 - Only answer using the knowledge in this prompt. If you don't know something, say: "That's a great question — I couldn't find that information in the company's documentation."
 - Never request passwords or payment info.
 - Never pretend to be a human.
@@ -161,8 +163,9 @@ const tools = [
           concerns:        { type: "string", description: "Any concerns or special questions raised" },
           errors:          { type: "string", description: "Any questions the bot could not answer" },
           isComplete:      { type: "boolean", description: "true if conversation fully finished, false if still in progress" },
+          conversationLog: { type: "string", description: "Full conversation history as JSON string. Always include this." },
         },
-        required: ["firstName", "phone"],
+        required: ["firstName"],
       },
     },
   },
@@ -222,6 +225,7 @@ async function saveToAirtable(data) {
       Error:                   data.errors       || "",
       "Lead Status":           data.isComplete   ? "New" : "Incomplete",
       "Date of Conversation":  new Date().toISOString(),
+      "Conversation Log":      data.conversationLog || "",
     };
 
     Object.keys(fields).forEach((k) => { if (fields[k] === "") delete fields[k]; });
@@ -396,7 +400,24 @@ export default async function handler(req, res) {
       assistantMessage = finalResponse.choices[0].message;
     }
 
-    return res.status(200).json({ reply: assistantMessage.content });
+    // Fallback: if reply contains a quote and AI didn't save, auto-save the convo
+    const replyText = assistantMessage.content || "";
+    const hasQuote  = /\$\d{2,}/.test(replyText) && /estimat|price|quote|total/i.test(replyText);
+    const aiDidSave = assistantMessage.tool_calls?.some(
+      (tc) => tc.function.name === "save_lead_to_airtable"
+    );
+    if (hasQuote && !aiDidSave) {
+      // Extract name from conversation
+      const firstName = messages.find((m) => m.role === "user")?.content || "Unknown";
+      const fullConvo = [...messages, { role: "assistant", content: replyText }];
+      saveToAirtable({
+        firstName,
+        conversationLog: JSON.stringify(fullConvo),
+        isComplete: false,
+      }).catch(() => {});
+    }
+
+    return res.status(200).json({ reply: replyText });
 
   } catch (err) {
     console.error("Chat handler error:", err);
