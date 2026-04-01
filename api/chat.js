@@ -198,7 +198,6 @@ async function saveToAirtable(data) {
       "Date of Conversation":  new Date().toISOString(),
     };
 
-    // Remove empty strings so Airtable doesn't complain
     Object.keys(fields).forEach((k) => { if (fields[k] === "") delete fields[k]; });
 
     const res = await fetch(
@@ -229,7 +228,6 @@ async function checkCalendarAvailability(weeksAhead = 4) {
     });
     const calendar = google.calendar({ version: "v3", auth });
 
-    // Never book before May 16 2026
     const minDate = new Date("2026-05-16T00:00:00-04:00");
     const now     = new Date();
     const start   = now > minDate ? now : minDate;
@@ -305,8 +303,10 @@ export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST")   return res.status(405).end();
+
+  // Initialize OpenAI here so it reads the env var at request time
   if (!process.env.OPENAI_API_KEY) {
-  return res.status(500).json({ error: "OPENAI_API_KEY is not configured." });
+    return res.status(500).json({ error: "OPENAI_API_KEY is not configured." });
   }
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
