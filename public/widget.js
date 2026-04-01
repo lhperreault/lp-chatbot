@@ -364,26 +364,36 @@
   }
 
   function detectSuggestions(reply) {
-    const lower = reply.toLowerCase();
-    if (lower.includes("what do you want cleaned") || lower.includes("what would you like cleaned") || lower.includes("what can i help") || lower.includes("what service") || lower.includes("what are you looking")) {
+    // Only look at the last question/sentence to avoid false matches
+    // Split on newlines and "?" to find the final question
+    const lines = reply.split(/\n/).filter(function (l) { return l.trim(); });
+    const lastChunk = lines.slice(-2).join(" ").toLowerCase();
+    const full = reply.toLowerCase();
+
+    // Never show suggestions if asking for phone, email, address, or booking
+    if (lastChunk.includes("phone") || lastChunk.includes("email") || lastChunk.includes("address") || lastChunk.includes("availability") || lastChunk.includes("book")) {
+      return null;
+    }
+
+    if (lastChunk.includes("what do you want cleaned") || lastChunk.includes("what would you like cleaned") || lastChunk.includes("what can i help") || lastChunk.includes("what service") || lastChunk.includes("what are you looking")) {
       return ["house exterior", "deck, porch", "patio, slab, brick, stone, pavers, sidewalk", "fencing", "clean out gutters"];
     }
-    if (lower.includes("how many stories") || lower.includes("how many floors")) {
+    if (lastChunk.includes("how many stories") || lastChunk.includes("how many floors")) {
       return ["1 Story", "2 Stories", "3 Stories"];
     }
-    if (lower.includes("primary material") || lower.includes("what material") || lower.includes("what type of material") || lower.includes("what is the siding")) {
+    if (lastChunk.includes("primary material") || lastChunk.includes("what material") || lastChunk.includes("what type of material") || lastChunk.includes("what is the siding")) {
       return ["Vinyl", "Wood", "Brick/Stone", "Stucco", "Composite"];
     }
-    if (lower.includes("last cleaning") || lower.includes("how long has it been") || lower.includes("last time") || lower.includes("when was the last")) {
+    if (lastChunk.includes("last cleaning") || lastChunk.includes("how long has it been") || lastChunk.includes("last time") || lastChunk.includes("when was the last") || lastChunk.includes("how dirty")) {
       return ["Less than 1 year", "1-2 years", "3+ years", "Never"];
     }
-    if (lower.includes("deck") && (lower.includes("material") || lower.includes("type"))) {
+    if (lastChunk.includes("deck") && (lastChunk.includes("material") || lastChunk.includes("type"))) {
       return ["Wood", "Composite/Trek", "Vinyl/PVC"];
     }
-    if (lower.includes("fence") && (lower.includes("material") || lower.includes("type"))) {
+    if (lastChunk.includes("fence") && (lastChunk.includes("material") || lastChunk.includes("type"))) {
       return ["Wood", "Vinyl", "Metal"];
     }
-    if ((lower.includes("patio") || lower.includes("walkway")) && (lower.includes("material") || lower.includes("type"))) {
+    if ((lastChunk.includes("patio") || lastChunk.includes("walkway")) && (lastChunk.includes("material") || lastChunk.includes("type"))) {
       return ["Concrete", "Pavers/Brick", "Stone Slab"];
     }
     return null;
