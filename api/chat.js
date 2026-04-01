@@ -1,7 +1,5 @@
-import OpenAI from "openai";
 import { google } from "googleapis";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import OpenAI from "openai";
 
 // ─── CORS helper ────────────────────────────────────────────────────────────
 function setCors(res) {
@@ -307,6 +305,10 @@ export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST")   return res.status(405).end();
+  if (!process.env.OPENAI_API_KEY) {
+  return res.status(500).json({ error: "OPENAI_API_KEY is not configured." });
+  }
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const { messages } = req.body;
   if (!messages || !Array.isArray(messages)) {
