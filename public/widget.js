@@ -11,6 +11,33 @@
     : "";
   const API_URL  = ORIGIN + "/api/chat";
   const LOGO_URL = ORIGIN + "/logo.png";
+  const STORAGE_KEY = "lp-chat-session";
+
+  // ─── LocalStorage helpers ──────────────────────────────────────────────────
+  function saveSession() {
+    const data = { messages, ts: Date.now() };
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  }
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      // Expire after midnight (same-day persistence)
+      const saved = new Date(data.ts);
+      const now   = new Date();
+      if (saved.toDateString() !== now.toDateString()) {
+        localStorage.removeItem(STORAGE_KEY);
+        return null;
+      }
+      return data.messages || null;
+    } catch { return null; }
+  }
+
+  function clearSession() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  }
 
   const style = document.createElement("style");
   style.textContent = `
@@ -181,10 +208,25 @@
     }
     #lp-chat-send:hover    { background: #1d4ed8; }
     #lp-chat-send:disabled { background: #93c5fd; cursor: not-allowed; }
-    #lp-powered {
-      text-align: center; font-size: 11px; color: #94a3b8;
-      padding: 4px 0 8px; background: #fff; flex-shrink: 0;
+    #lp-chat-footer {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 4px 0 8px; background: #fff; flex-shrink: 0;
     }
+    #lp-powered {
+      font-size: 11px; color: #94a3b8;
+    }
+    #lp-reset-btn {
+      background: none; border: none; color: #cbd5e1;
+      font-size: 13px; cursor: pointer; padding: 0 4px;
+      transition: color 0.15s; line-height: 1;
+    }
+    #lp-reset-btn:hover { color: #94a3b8; }
+    #lp-reset-confirm {
+      display: none; font-size: 11px; color: #ef4444;
+      cursor: pointer; background: none; border: none;
+      font-family: inherit; padding: 0 4px;
+    }
+    #lp-reset-confirm:hover { text-decoration: underline; }
   `;
   document.head.appendChild(style);
 
@@ -215,7 +257,11 @@
       <textarea id="lp-chat-input" rows="1" placeholder="Type a message..."></textarea>
       <button id="lp-chat-send" aria-label="Send">\u27A4</button>
     </div>
-    <div id="lp-powered">Powered by LP Pressure Washing AI</div>
+    <div id="lp-chat-footer">
+      <span id="lp-powered">Powered by LP Pressure Washing AI</span>
+      <button id="lp-reset-btn" title="Reset chat">\u21BB</button>
+      <button id="lp-reset-confirm">Reset chat?</button>
+    </div>
   `;
 
   document.body.appendChild(bubble);
@@ -231,6 +277,8 @@
   const welcomeEl   = win.querySelector("#lp-chat-welcome");
   const inputEl     = win.querySelector("#lp-chat-input");
   const sendBtn     = win.querySelector("#lp-chat-send");
+  const resetBtn    = win.querySelector("#lp-reset-btn");
+  const resetConfirm = win.querySelector("#lp-reset-confirm");
 
   function hideWelcome() {
     if (!welcomeHidden) {
@@ -288,7 +336,7 @@
     document.getElementById("lp-typing-indicator")?.remove();
   }
 
-  // Calculating animation — cycles through status words
+  // Calculating animation
   async function showCalculating() {
     const steps = ["Surveying the home...", "Measuring...", "Calculating..."];
     const row = document.createElement("div");
@@ -311,12 +359,10 @@
     document.getElementById("lp-calc-indicator")?.remove();
   }
 
-  // Check if the reply contains a price quote
   function replyHasQuote(text) {
     return /\$\d{2,}/.test(text) && /estimat|price|quote|total/i.test(text);
   }
 
-  // Detect which suggestions to show based on bot reply
   function detectSuggestions(reply) {
     const lower = reply.toLowerCase();
     if (lower.includes("what do you want cleaned") || lower.includes("what would you like cleaned") || lower.includes("what can i help") || lower.includes("what service") || lower.includes("what are you looking")) {
@@ -349,6 +395,7 @@
     messagesEl.querySelectorAll(".lp-suggestions").forEach((el) => el.remove());
     addMessage("user", text.trim());
     messages.push({ role: "user", content: text.trim() });
+    saveSession();
     inputEl.value = "";
     inputEl.style.height = "auto";
     isWaiting        = true;
@@ -364,7 +411,6 @@
       hideTyping();
       const reply = data.reply || "Sorry, something went wrong. Please try again!";
 
-      // If the reply has a price quote, show calculating animation first
       if (replyHasQuote(reply)) {
         await showCalculating();
         hideCalculating();
@@ -372,6 +418,7 @@
 
       addMessage("bot", reply);
       messages.push({ role: "assistant", content: reply });
+      saveSession();
       const suggestions = detectSuggestions(reply);
       if (suggestions) addSuggestions(suggestions);
     } catch {
@@ -383,16 +430,63 @@
     inputEl.focus();
   }
 
+  // Restore a saved session into the UI
+  function restoreSession(saved) {
+    greeted       = true;
+    welcomeHidden = true;
+    welcomeEl.classList.add("lp-welcome-hidden");
+    saved.forEach((msg) => {
+      messages.push(msg);
+      addMessage(msg.role === "user" ? "user" : "bot", msg.content);
+    });
+  }
+
+  function resetChat() {
+    messages.length = 0;
+    messagesEl.innerHTML = "";
+    greeted       = false;
+    welcomeHidden = false;
+    welcomeEl.classList.remove("lp-welcome-hidden");
+    clearSession();
+    resetConfirm.style.display = "none";
+    resetBtn.style.display = "";
+    // Re-greet
+    greeted = true;
+    const greeting = "Hey \uD83D\uDC4B! Welcome to LP Pressure Washing!\nI'm here to get you a fast, accurate quote and answer any questions - usually takes less than 2 minutes!\n\nBefore we dive in... What's your first name?";
+    addMessage("bot", greeting);
+    messages.push({ role: "assistant", content: greeting });
+    saveSession();
+  }
+
+  // Two-step reset: click icon → show "Reset chat?" → click that to confirm
+  resetBtn.addEventListener("click", () => {
+    resetBtn.style.display = "none";
+    resetConfirm.style.display = "inline";
+    // Auto-hide confirm after 3 seconds if not clicked
+    setTimeout(() => {
+      resetConfirm.style.display = "none";
+      resetBtn.style.display = "";
+    }, 3000);
+  });
+  resetConfirm.addEventListener("click", resetChat);
+
   async function openChat() {
     isOpen = true;
     win.classList.remove("lp-hidden");
     bubble.innerHTML = `<span style="font-size:28px;color:#fff;">\u2715</span>`;
     bubble.classList.add("lp-open");
     if (!greeted) {
-      greeted = true;
-      const greeting = "Hey \uD83D\uDC4B! Welcome to LP Pressure Washing!\nI'm here to get you a fast, accurate quote and answer any questions - usually takes less than 2 minutes!\n\nBefore we dive in... What's your first name?";
-      addMessage("bot", greeting);
-      messages.push({ role: "assistant", content: greeting });
+      // Try to restore a saved session
+      const saved = loadSession();
+      if (saved && saved.length > 0) {
+        restoreSession(saved);
+      } else {
+        greeted = true;
+        const greeting = "Hey \uD83D\uDC4B! Welcome to LP Pressure Washing!\nI'm here to get you a fast, accurate quote and answer any questions - usually takes less than 2 minutes!\n\nBefore we dive in... What's your first name?";
+        addMessage("bot", greeting);
+        messages.push({ role: "assistant", content: greeting });
+        saveSession();
+      }
     }
     inputEl.focus();
   }
