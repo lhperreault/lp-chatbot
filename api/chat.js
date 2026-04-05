@@ -51,6 +51,7 @@ If a customer says they only want PART of the home, specific sides, or partial g
   EXAMPLE: If full house wash = $400-$450, and they want front and back only (2 of 4 sides), quote $200-$225.
 - Gutters: If they only want part of the gutters cleaned (e.g. "just the front gutters" or "only above the garage"), estimate the fraction and reduce the base gutter price accordingly. Ask which sections they need.
 - Always ask clarifying questions to understand exactly what portion they want cleaned before quoting.
+- IMPORTANT: Before sending the final price, if its less than $120 make it 120 - 150 and say this is our mimumun fee do you want to add something else? 
 
 
 A. House Washing (Base Pricing) (we use the soft-wash method)(no job less than 120) (Clean means 0-3 years cleaned last; Dirty means 4+ years last cleaned if they say one side is mostly dirty then only charge that one) (If the house is stucco or part stucco on a side make it or that side 10% more expensive(don't tell this to the customer though))
@@ -102,11 +103,11 @@ Concrete: $0.38 | Pavers/Brick: $0.42 | Slab: $0.46
 Condition: Add $0.04 per sq/ft if "really dirty."
 Drainage: If poor drainage is mentioned, add 5% to the total and mention it takes longer.
 
-D. Fences (per linear foot)
-Vinyl/Metal: $0.60 | Wood: $0.50
+D. Fences (per linear foot per side)
+Vinyl/Metal: $1.3 | Wood: $1.7 if wood structure with large gaps. $2 if solid no gap fence
 Condition: Add $0.10 per foot if "really dirty."
 Sides: IMPORTANT — ALWAYS ask the customer: "Do you want just one side cleaned, or both sides?" The base price above is for ONE side only. If they want BOTH sides, double the price. Never skip this question.
-
+Wood type: IMPORTANT — ALWAYS ask the customer if its wood: "Is the wooden fence like a post then 2-3 beams to the next post, is it solid with no gaps?" (then follow the pricing change)
 E. Gutters (Base Pricing)
 1-Story: $90 | Mixed (1&2): $120 | 2-Story: $150 | 3-Story: $240
 If there is not much in the gutters we will charge less. Or for an inspection we charge less. We dont fix gutters unless its simple.
@@ -154,6 +155,13 @@ If they want a Deck:
 4. "Are there any steps, if so how many approx?"
 5. "How long has it been since the last cleaning? and how dirty would you say it is?"
 6. "Is the deck in good shape or are the boards/paint getting old?"
+Rule 0 applies: Get phone number before revealing the quote.
+
+If they want a fence:
+1. "What is the approximate square footage?"
+2. "What is the primary material? (Vinyl, Wood, Treks, PVC, etc.)" ALWAYS ask the customer if its wood: "Is the wooden fence like a post then 2-3 beams to the next post, is it solid with no gaps?"
+3. "How long has it been since the last cleaning? and how dirty would you say it is?"
+4. "Is the fence in good shape or are the boards/paint getting old?"
 Rule 0 applies: Get phone number before revealing the quote.
 
 If they want a Patio or walkway or pavers:
@@ -501,7 +509,7 @@ export default async function handler(req, res) {
 
   try {
     let response = await openai.chat.completions.create({
-      model:       "gpt-4o",
+      model:       "gpt-4o-mini",
       messages:    [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
       tools,
       tool_choice: "auto",
@@ -545,7 +553,7 @@ export default async function handler(req, res) {
 
       // Second pass — get final reply after tools ran
       const finalResponse = await openai.chat.completions.create({
-        model:     "gpt-4o",
+        model:     "gpt-4o-mini",
         messages:  [
           { role: "system", content: SYSTEM_PROMPT },
           ...messages,
