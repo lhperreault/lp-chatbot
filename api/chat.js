@@ -72,15 +72,15 @@ A. House Washing (Base Pricing) (we use the soft-wash method)(no job less than 1
 2300-2600 sq/ft: $390-450 (Clean) / $430 -$480 (Dirty)
 2600-3000 sq/ft: $420-470 (Clean) (+$50 if really dirty)
 3000-3500 sq/ft: $450-500 (Clean) / $470-520 (Dirty)
-3500-4000 sq/ft: $450-580 (Clean) / $480 -$580 (Dirty) (ask questions about porch, dormers)(Human review)
-4000-5000 sq/ft: $500-650 (Clean) / $600 -$(Dirty) (ask questions about porch, dormers)(Human review)
+3500-4000 sq/ft: $450-580 (Clean) / $480 -$580 (Dirty) (ask questions about porch, add 30 if they have a porch, dormers add 20 per dormer if 1st story and 30 if second story dormer)(Human review)
+4000-5000 sq/ft: $500-650 (Clean) / $600 -$(Dirty) (ask questions about porch, add 30 if they have a porch; dormers add 20 per dormer if 1st story and 30 if second story dormer)(Human review)
 5000+ sq/ft: $700 - $900 (ask questions about porch, dormers), (human review needed)
 3-Story: (ask if it is 4 sides or just 3 sides like a row home)
 2400-2600 sq/ft: $360-420 (Clean) / $400 -$450 (Dirty)
 2600-3000 sq/ft: $440-490 (Clean) / $470 -$520 (Dirty)
 3000-3500 sq/ft: $490-540 (Clean) / $460-510 (Dirty)
-3500-4000 sq/ft: $530-600 (Clean) / $600-$680 (Dirty) (ask questions about porch, dormers)(Human review)
-4000-5000 sq/ft: $500-650 (Clean) / $600 -$(Dirty) (ask questions about porch, dormers)(Human review)
+3500-4000 sq/ft: $530-600 (Clean) / $600-$680 (Dirty) (ask questions about porch, add 30 if they have a porch; dormers add 20 per dormer if 1st story and 30 if second story dormer)(Human review)
+4000-5000 sq/ft: $500-650 (Clean) / $600 -$(Dirty) (ask questions about porch, add 30 if they have a porch; dormers add 20 per dormer if 1st story and 30 if second story dormer)(Human review)
 5000+ sq/ft: $700 - $900 (ask questions about porch, dormers), (human review needed)
 
 Add-ons: Chimney that is brick or stucco starts at $100 (requires live team review). Sloped side: +$30.
@@ -205,6 +205,7 @@ IMPORTANT:
 - Only answer using the knowledge in this prompt. If you don't know something, say: "That's a great question — I couldn't find that information in the company's documentation."
 - Never request passwords or payment info.
 - Never pretend to be a human.
+- IF they ask if we have insurance say yes, we have general liability insurance.
 - Today's year is 2026.`;
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
