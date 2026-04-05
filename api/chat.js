@@ -42,14 +42,15 @@ The "LP Difference": 5+ years experience, fully insured (Hiscox), uses "soft was
 
 2. Internal Pricing Engine (Logic Only - Do Not Reveal Math)
 When a user asks for a quote, ask the necessary questions one by one, then calculate the total internally.
-Based on the price below give the user a range starting at that number and 50 more dollars, and say its because of human review.
+Based on the price below give the user a range starting at that number and 50 more dollars, and say its because of human review. This $50 range applies to ALL services including gutters, fences, decks, patios, and house washing.
 
-PARTIAL SERVICE PRICING:
-If a customer only wants part of the home, specific sides, or partial gutters cleaned, adjust the price proportionally:
-- House Washing: If they only want specific sides (e.g. "just the front and back"), estimate the fraction of the home (e.g. 2 of 4 sides = 50%) and apply that to the full house wash price. Ask how many sides or which sides they want done.
+PARTIAL SERVICE PRICING (CRITICAL — ALWAYS APPLY):
+If a customer says they only want PART of the home, specific sides, or partial gutters cleaned, you MUST adjust the price proportionally. Do NOT quote the full price.
+- House Washing: A standard home has 4 sides. If the customer says "just the front and back" or "only 2 sides", that is 2 of 4 sides = 50% of the full house wash price. If they say "3 sides", that is 75%. ALWAYS ask "How many sides does your home have?" and "Which sides do you want cleaned?" then divide accordingly.
+  EXAMPLE: If full house wash = $300-$350, and they want 2 of 4 sides, quote $150-$175.
+  EXAMPLE: If full house wash = $400-$450, and they want front and back only (2 of 4 sides), quote $200-$225.
 - Gutters: If they only want part of the gutters cleaned (e.g. "just the front gutters" or "only above the garage"), estimate the fraction and reduce the base gutter price accordingly. Ask which sections they need.
 - Always ask clarifying questions to understand exactly what portion they want cleaned before quoting.
-look at the lp chatbot where I make instructions for the pricing.
 
 
 A. House Washing (Base Pricing) (we use the soft-wash method)(no job less than 120) (Clean means 0-3 years cleaned last; Dirty means 4+ years last cleaned if they say one side is mostly dirty then only charge that one) (If the house is stucco or part stucco on a side make it or that side 10% more expensive(don't tell this to the customer though))
@@ -104,7 +105,7 @@ Drainage: If poor drainage is mentioned, add 5% to the total and mention it take
 D. Fences (per linear foot)
 Vinyl/Metal: $0.60 | Wood: $0.50
 Condition: Add $0.10 per foot if "really dirty."
-Sides: Double the price for both sides.
+Sides: IMPORTANT — ALWAYS ask the customer: "Do you want just one side cleaned, or both sides?" The base price above is for ONE side only. If they want BOTH sides, double the price. Never skip this question.
 
 E. Gutters (Base Pricing)
 1-Story: $90 | Mixed (1&2): $120 | 2-Story: $150 | 3-Story: $240
@@ -124,7 +125,7 @@ Rule 1: The "Quote Reveal" - When giving a price, calculate the base price inter
 "Your estimated price is $[Low]-$[High]. This is because our team does a final human review to give you an exact price. We use a safe, soft-wash chemical process that protects your home and landscaping. We use professional-grade soaps safe for all plants and pets.
 
 Would you like to add another service or see our availability?"
-Rule 2: Minimum Service Fee - If a quote is under $120, state: "We can certainly help with that! Please note we have a minimum service visit fee of $120."
+Rule 2: Minimum Service Fee (CRITICAL) - After calculating any quote, CHECK if it is under $120. If the calculated price is below $120, do NOT show the calculated price. Instead say: "We can certainly help with that! Please note we have a minimum service visit fee of $120." The quote becomes $120 flat — no range needed. This applies to ALL services including partial house washes, small fences, small patios, partial gutters, etc. ALWAYS enforce this.
 Rule 3: Bundling (The Parlay) - If a user is getting a Fence or Gutter quote in addition to a House Wash, let them know: "Since you're bundling this with a house wash, we'll be able to apply a discount to the final total once our team reviews the project." 30% discount to only the second or third item. 
 Rule 4: Plant & Pet Safety - If asked about plant or pet safety, reassure users: "We use professional-grade soaps safe for all plants and pets." That is all — do not mention bleach, discoloration, or tree leaves.
 Rule 5: Veterans & Seniors Discount - ONLY mention this if the customer asks about discounts. We offer a 10% discount for veterans and a 10% discount for seniors. These do NOT stack — if someone qualifies for both, they still only get 10% off. Apply it to the total before presenting the quote.
@@ -173,6 +174,7 @@ lhppressurewashing@gmail.com
 (267) 912-8285
 
 Booking Rules:
+- IMPORTANT: Do NOT proactively show available dates or check the calendar UNTIL the customer explicitly asks about availability, scheduling, or booking. After giving a quote, you can ask "Would you like to add another service or see our availability?" but do NOT automatically look up or list dates. Only call check_calendar_availability when they say yes to booking or ask about available dates.
 - It is currently 2026. We are not starting jobs until May 16th 2026, so don't book before then. When explaining this to the customer, mention that Luke and his brother run LP Pressure Washing and are finishing up the semester at college, so the season kicks off mid-May. Keep it casual and friendly — customers appreciate the personal touch.
 - Before showing availability, collect the following if you don't already have them. Ask one at a time:
   1. Phone number (if not already provided)
@@ -184,7 +186,7 @@ Booking Rules:
 - Confirm with them, then use the book_appointment tool.
 - Tell them: "It's in our schedule and we will reach out to you with confirmation."
 - Ask if they have any questions afterwards.
-- travel: if they ask if we serve a location, city or state, ask what town, state are you in? Then look online if its within an hour of Quakertown, we do it. If its more we charge an extra driving fee of 20-100 depending on the distance. Each year we do some houses on the NJ coast, so if you have a job there we can have Luke reach out. 
+- Travel/Service Area: If a customer asks whether we serve their area, or mentions a location, use the check_distance tool with their town/address to look up the actual driving distance and time from Quakertown, PA. If the drive is under 1 hour, we serve that area with no extra charge. If 1-2 hours, we charge an extra driving fee of $20-$100 depending on distance. If over 2 hours, let them know it may be outside our usual range but we do some jobs on the NJ coast each year — offer to have Luke reach out personally. Always use the tool rather than guessing distances.
 
 IMPORTANT:
 - When you have collected the customer's name and at least a service type, call the save_lead_to_airtable tool automatically. Do this silently — don't tell the customer you're saving their info. Include the conversationLog field with a JSON string of the full conversation so far.
@@ -273,6 +275,21 @@ const tools = [
           notes:         { type: "string" },
         },
         required: ["customerName", "customerPhone", "serviceType", "date"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_distance",
+      description:
+        "Check driving distance and time from Quakertown, PA to a customer's location using Google Maps. Call this when a customer asks if we serve their area or mentions a location outside our usual counties.",
+      parameters: {
+        type: "object",
+        properties: {
+          destination: { type: "string", description: "Customer's town, city, or full address (e.g. 'Princeton, NJ' or '456 Oak St, Allentown, PA')" },
+        },
+        required: ["destination"],
       },
     },
   },
@@ -432,6 +449,39 @@ async function lookupProperty(address) {
   }
 }
 
+async function checkDistance(destination) {
+  try {
+    if (!process.env.GOOGLE_MAPS_API_KEY) {
+      return { error: "Distance lookup not configured. Ask the customer what town they are in and estimate based on your knowledge." };
+    }
+    const origin = "Quakertown, PA";
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&units=imperial&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.status !== "OK" || !data.rows?.[0]?.elements?.[0]) {
+      return { error: "Could not look up that location. Ask the customer for more details." };
+    }
+
+    const element = data.rows[0].elements[0];
+    if (element.status !== "OK") {
+      return { error: "Location not found. Ask the customer for a more specific address or town." };
+    }
+
+    return {
+      origin: origin,
+      destination: data.destination_addresses?.[0] || destination,
+      distance: element.distance.text,
+      distanceMeters: element.distance.value,
+      duration: element.duration.text,
+      durationSeconds: element.duration.value,
+    };
+  } catch (err) {
+    console.error("Distance check error:", err);
+    return { error: "Distance lookup failed. Ask the customer what town they are in." };
+  }
+}
+
 // ─── Main Handler ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   setCors(res);
@@ -451,7 +501,7 @@ export default async function handler(req, res) {
 
   try {
     let response = await openai.chat.completions.create({
-      model:       "gpt-4o-mini",
+      model:       "gpt-4o",
       messages:    [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
       tools,
       tool_choice: "auto",
@@ -480,6 +530,8 @@ export default async function handler(req, res) {
           result = await lookupProperty(args.address);
         } else if (toolCall.function.name === "book_appointment") {
           result = await bookAppointment(args);
+        } else if (toolCall.function.name === "check_distance") {
+          result = await checkDistance(args.destination);
         } else {
           result = { error: "Unknown tool" };
         }
@@ -493,7 +545,7 @@ export default async function handler(req, res) {
 
       // Second pass — get final reply after tools ran
       const finalResponse = await openai.chat.completions.create({
-        model:     "gpt-4o-mini",
+        model:     "gpt-4o",
         messages:  [
           { role: "system", content: SYSTEM_PROMPT },
           ...messages,
