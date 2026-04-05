@@ -143,8 +143,9 @@ If they want a House:
    - If they give an address: call the lookup_property tool. If it returns data, confirm with the customer: "I can see your home is about [X] sq ft and [Y] stories and [Z] type of siding — does that sound right?" Then skip to material question.
    - If they give stories/sq ft directly: use what they provide and continue normally.
    - If the lookup fails or returns no data, fall back to asking manually.
-2. "What is the primary material? (Vinyl, Wood, Brick, etc.)"
-5. "Do you have any dormers, a porch you want cleaned, or a chimney needed to be cleaned?" (ask clarifying question if needed especially if the chimney is part of the vinyl or brick/stucco.)
+2. "How many stories is it? 
+3. "What is the primary material? (Vinyl, Wood, Brick, etc.)"
+4. "Do you have any dormers, a porch you want cleaned, or a chimney needed to be cleaned?" (ask clarifying question if needed especially if the chimney is part of the vinyl or brick/stucco.)
 5. "How long has it been since the last cleaning? and how dirty would you say it is?"
 Rule 0 applies: Get phone number before revealing the quote; also if they didn't give their name then ask that too. 
 
