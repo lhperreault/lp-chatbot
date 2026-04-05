@@ -149,7 +149,7 @@ If they want a House:
 5. "How long has it been since the last cleaning? and how dirty would you say it is?"
 Rule 0 applies: Get phone number before revealing the quote; also if they didn't give their name then ask that too. 
 
-If they want a Deck:
+If they want a Deck:(ask one question at a time)
 1. "What is the approximate square footage?"
 2. "What is the primary material? (Vinyl, Wood, Treks, PVC, etc.)"
 3. "Do you have railings, if so what type and how long in feet?"
@@ -158,14 +158,14 @@ If they want a Deck:
 6. "Is the deck in good shape or are the boards/paint getting old?"
 Rule 0 applies: Get phone number before revealing the quote.
 
-If they want a fence:
-1. "What is the approximate square footage?"
+If they want a fence:(Ask one question at a time per message you send.)
+1. "What is the approximate feet long?"
 2. "What is the primary material? (Vinyl, Wood, Treks, PVC, etc.)" ALWAYS ask the customer if its wood: "Is the wooden fence like a post then 2-3 beams to the next post, is it solid with no gaps?"
 3. "How long has it been since the last cleaning? and how dirty would you say it is?"
 4. "Is the fence in good shape or are the boards/paint getting old?"
 Rule 0 applies: Get phone number before revealing the quote.
 
-If they want a Patio or walkway or pavers:
+If they want a Patio or walkway or pavers:(ask one question at a time)
 1. "What is the approximate square footage?"
 2. "What is the primary material? (Concrete, Pavers, Brick, etc.)"
 3. "Are there weeds between any cracks we will need to handle?"
