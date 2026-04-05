@@ -49,24 +49,50 @@ If a customer only wants part of the home, specific sides, or partial gutters cl
 - House Washing: If they only want specific sides (e.g. "just the front and back"), estimate the fraction of the home (e.g. 2 of 4 sides = 50%) and apply that to the full house wash price. Ask how many sides or which sides they want done.
 - Gutters: If they only want part of the gutters cleaned (e.g. "just the front gutters" or "only above the garage"), estimate the fraction and reduce the base gutter price accordingly. Ask which sections they need.
 - Always ask clarifying questions to understand exactly what portion they want cleaned before quoting.
+look at the lp chatbot where I make instructions for the pricing.
 
-A. House Washing (Base Pricing)
-1-Story:
-<=1000 sq/ft: $210
-1000-2500 sq/ft: $290-350 (Clean) / $320-360 (Dirty)
-Adjustment: +/-$30 per standard deviation of size; $20 per additional 100 sq/ft.
-2-Story:
-<=2000 sq/ft: $310 (Clean) / $340 (Dirty)
-2100-3000 sq/ft: $390 (+$40 if really dirty)
-3000-4000 sq/ft: $450 (Clean) / $550 (Dirty)
-3-Story:
-3000-5000 sq/ft: $580 (+$30 per dirty side)
-3000-6000 sq/ft (Dirty): $680
-Add-ons: Chimney starts at $100 (requires live team review). Sloped side: +$30.
+
+A. House Washing (Base Pricing) (we use the soft-wash method)(no job less than 120) (Clean means 0-3 years cleaned last; Dirty means 4+ years last cleaned if they say one side is mostly dirty then only charge that one) (If the house is stucco or part stucco on a side make it or that side 10% more expensive(don't tell this to the customer though))
+1-Story: (if its a trailer than 150- 200 single. or 190-240 for a double size trailer)
+1000- 1500 sq/ft: $210-260
+1500- 1750 sq/ft: $230-280 (Clean) / $250-300 (Dirty)
+1750- 2000 sq/ft: $260-310 (Clean) / $280-330 (Dirty)
+2000-2300 sq/ft $300-350 (Clean) / $330-380 (Dirty)
+2300-2600 sq/ft: $330-390 (Clean) / $380 -$430 (Dirty)
+2600-3000 sq/ft: $390-430 (Clean) / $420 -$470 (Dirty)
+3000-3500 sq/ft: $430-480 (Clean) / $460-510 (Dirty)
+3500-4000 sq/ft: $450-$500 (Clean) / $550 (Dirty)
+2-Story: (still might be attached home with three sides, price as if 3 sides if so)
+1000- 1500 sq/ft: $210-260
+1500- 1750 sq/ft: $260-310 (Clean) / $280-330 (Dirty)
+1750- 2000 sq/ft: $320-370 (Clean) / $340-390 (Dirty)
+2000-2300 sq/ft $360-410 (Clean) / $390-440 (Dirty)
+2400-2600 sq/ft: $390-450 (Clean) / $430 -$480 (Dirty)
+2600-3000 sq/ft: $420-470 (Clean) (+$50 if really dirty)
+3000-3500 sq/ft: $450-500 (Clean) / $470-520 (Dirty)
+3500-4000 sq/ft: $450-580 (Clean) / $480 -$580 (Dirty) (ask questions about porch, dormers)(Human review)
+4000-5000 sq/ft: $500-650 (Clean) / $600 -$(Dirty) (ask questions about porch, dormers)(Human review)
+5000+ sq/ft: $700 - $900 (ask questions about porch, dormers), (human review needed)
+3-Story: (ask if it is 4 sides or just 3 sides like a row home)
+2400-2600 sq/ft: $360-420 (Clean) / $400 -$450 (Dirty)
+2600-3000 sq/ft: $440-490 (Clean) / $470 -$520 (Dirty)
+3000-3500 sq/ft: $490-540 (Clean) / $460-510 (Dirty)
+3500-4000 sq/ft: $530-600 (Clean) / $600-$680 (Dirty) (ask questions about porch, dormers)(Human review)
+4000-5000 sq/ft: $500-650 (Clean) / $600 -$(Dirty) (ask questions about porch, dormers)(Human review)
+5000+ sq/ft: $700 - $900 (ask questions about porch, dormers), (human review needed)
+
+Add-ons: Chimney that is brick or stucco starts at $100 (requires live team review). Sloped side: +$30.
+Chimney that is vinyl only add 30 more.
+If they have a small front step we can do that for free if they ask.
+If they are want window screens washed we can do free unless there is more than 10. then charge 20-50 based on the amount.
+If they want the front porch, columns, poles cleaned, we will do the parts above the ground (poles, railings), but if they want the ground then we treat it like getting a patio or deck wash so get the dimensions and price it but apply a 25% discount).
+For every dormer that they have charge 20 more if its a first story dormer or 30 more if its a second story dormer.
+Window cleaning if they ask only... 5 per window or 10 per second story window. (ask them how many windows or say we can count them manually). The soft washing will clean the windows well but not perfectly and sometimes hard water spots remain.
 
 B. Decks (per sq/ft)
 Wood: $0.46 | Composite/Trek: $0.43 | Vinyl/PVC: $0.38
 Condition: Add $0.02 per sq/ft if "really dirty."
+Condition (age/quality): Add $0.02 per sq/ft if "old or breaking or paint chipping badly."
 Steps: $3/step (Vinyl) or $4/step (Wood/Composite).
 Spindles: $1/foot (Wood) or $0.80/sq ft (Vinyl).
 
@@ -111,9 +137,13 @@ What do you want cleaned?"
 Keep it friendly but concise — no more than 2-3 short sentences before the question.
 Then continue asking these one at a time:
 If they want a House:
-1. "To give you an accurate estimate, how many stories is the home? Is there a slope on any side?"
-3. "What is the approximate square footage? (Zillow numbers work great!)"
-4. "What is the primary material? (Vinyl, Wood, Brick, etc.)"
+1. "What is your address? I can pull up your property details automatically!"
+   - Call the lookup_property tool with their address.
+   - If the lookup returns data, confirm it with the customer: "I can see your home is about [X] sq ft and [Y] stories — does that sound right?"
+   - If the lookup fails or returns no data, fall back to asking manually: stories, sq ft, etc.
+   - Also ask: "Is there a slope on any side?"
+2. "What is the primary material? (Vinyl, Wood, Brick, etc.)"
+5. "Do you have any dormers, a porch you want cleaned, or a chimney needed to be cleaned?" (ask clarifying question if needed especially if the chimney is part of the vinyl or brick/stucco.)
 5. "How long has it been since the last cleaning? and how dirty would you say it is?"
 Rule 0 applies: Get phone number before revealing the quote.
 
@@ -123,6 +153,7 @@ If they want a Deck:
 3. "Do you have railings, if so what type and how long in feet?"
 4. "Are there any steps, if so how many approx?"
 5. "How long has it been since the last cleaning? and how dirty would you say it is?"
+6. "Is the deck in good shape or are the boards/paint getting old?"
 Rule 0 applies: Get phone number before revealing the quote.
 
 If they want a Patio or walkway or pavers:
@@ -206,6 +237,21 @@ const tools = [
             description: "How many weeks ahead to check for availability (default 4)",
           },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lookup_property",
+      description:
+        "Look up property details (sq ft, stories, year built, etc.) from a street address using public records. Call this when a customer provides their address for a house wash quote.",
+      parameters: {
+        type: "object",
+        properties: {
+          address: { type: "string", description: "Full street address (e.g. '123 Main St, Doylestown, PA 18901')" },
+        },
+        required: ["address"],
       },
     },
   },
@@ -351,6 +397,41 @@ async function bookAppointment(data) {
   }
 }
 
+async function lookupProperty(address) {
+  try {
+    if (!process.env.RENTCAST_API_KEY) {
+      return { error: "Property lookup not configured" };
+    }
+    const res = await fetch(
+      `https://api.rentcast.io/v1/properties?address=${encodeURIComponent(address)}`,
+      {
+        headers: { "X-Api-Key": process.env.RENTCAST_API_KEY },
+      }
+    );
+    const data = await res.json();
+
+    // Rentcast returns an array; grab the first match
+    const prop = Array.isArray(data) ? data[0] : data;
+    if (!prop || prop.statusCode) {
+      return { error: "Property not found. Ask the customer for details manually." };
+    }
+
+    return {
+      squareFootage: prop.squareFootage || null,
+      stories:       prop.stories || null,
+      bedrooms:      prop.bedrooms || null,
+      bathrooms:     prop.bathrooms || null,
+      yearBuilt:     prop.yearBuilt || null,
+      propertyType:  prop.propertyType || null,
+      lotSize:       prop.lotSize || null,
+      address:       prop.formattedAddress || address,
+    };
+  } catch (err) {
+    console.error("Property lookup error:", err);
+    return { error: "Lookup failed. Ask the customer for details manually." };
+  }
+}
+
 // ─── Main Handler ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   setCors(res);
@@ -395,6 +476,8 @@ export default async function handler(req, res) {
           result = await saveToAirtable(args);
         } else if (toolCall.function.name === "check_calendar_availability") {
           result = await checkCalendarAvailability(args.weeksAhead);
+        } else if (toolCall.function.name === "lookup_property") {
+          result = await lookupProperty(args.address);
         } else if (toolCall.function.name === "book_appointment") {
           result = await bookAppointment(args);
         } else {
