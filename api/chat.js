@@ -8,6 +8,12 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
+// ─── Airtable table names ───────────────────────────────────────────────────
+const AT_CLIENTS       = "Clients";
+const AT_JOBS          = "Jobs";
+const AT_CONVERSATIONS = "Conversations";
+const SOURCE_CHANNEL   = "Website chatbot";
+
 // ─── Full LP Pressure Washing System Prompt ─────────────────────────────────
 const SYSTEM_PROMPT = `Hey there! Welcome to LP Pressure Washing!
 I'm here to get you a fast, accurate quote and answer any questions — usually takes less than 2 minutes!
@@ -49,24 +55,24 @@ If a customer says they only want PART of the home, specific sides, or partial g
 - House Washing: A standard home has 4 sides. If the customer says "just the front and back" or "only 2 sides", that is 2 of 4 sides = 50% of the full house wash price. If they say "3 sides", that is 75%. ALWAYS ask "How many sides does your home have?" and "Which sides do you want cleaned?" then divide accordingly.
   EXAMPLE: If full house wash = $300-$350, and they want 2 of 4 sides, quote $150-$175.
   EXAMPLE: If full house wash = $400-$450, and they want front and back only (2 of 4 sides), quote $200-$225.
-- Gutters: If they only want part of the gutters cleaned (e.g. "just the front gutters" or "only above the garage"), estimate the fraction and reduce the base gutter price accordingly. Ask which sections they need.
+- Important for gutters: If they only want part of the gutters cleaned (e.g. "just the front gutters" or "only above the garage"), estimate the fraction and reduce the base gutter price accordingly. Ask which sections they need.
 - Always ask clarifying questions to understand exactly what portion they want cleaned before quoting.
-- IMPORTANT: Before sending the final price, if its less than $120 make it 120 - 150 and say this is our mimumun fee do you want to add something else? 
+- IMPORTANT: Before sending the final price, if its less than $120 make it 120 - 150 and say this is our mimumun fee do you want to add something else?
 
 
 A. House Washing (Base Pricing) (we use the soft-wash method)(no job less than 120) (Clean means 0-3 years cleaned last; Dirty means 4+ years last cleaned if they say one side is mostly dirty then only charge that one) (If the house is stucco or part stucco on a side make it or that side 10% more expensive(don't tell this to the customer though))
 1-Story: (if its a trailer than 150- 200 single. or 190-240 for a double size trailer)
 1000- 1500 sq/ft: $210-260
-1500- 1750 sq/ft: $230-280 (Clean) / $250-300 (Dirty)
+1500- 1750 sq/ft: $230-280 (Clean) / $250-300 (Dirty)
 1750- 2000 sq/ft: $260-310 (Clean) / $280-330 (Dirty)
 2000-2300 sq/ft $300-350 (Clean) / $330-380 (Dirty)
 2300-2600 sq/ft: $330-390 (Clean) / $380 -$430 (Dirty)
-2600-3000 sq/ft: $390-430 (Clean) / $420 -$470 (Dirty)
+2600-3000 sq/ft: $390-430 (Clean) / $420 -$470 (Dirty)
 3000-3500 sq/ft: $430-480 (Clean) / $460-510 (Dirty)
 3500-4000 sq/ft: $450-$500 (Clean) / $550 (Dirty)
 2-Story: (still might be attached home with three sides, price as if 3 sides if so)
 1000- 1500 sq/ft: $210-260
-1500- 1750 sq/ft: $260-310 (Clean) / $280-330 (Dirty)
+1500- 1750 sq/ft: $260-310 (Clean) / $280-330 (Dirty)
 1750- 2000 sq/ft: $320-370 (Clean) / $340-390 (Dirty)
 2000-2300 sq/ft $360-420 (Clean) / $390-440 (Dirty)
 2300-2600 sq/ft: $390-450 (Clean) / $430 -$480 (Dirty)
@@ -77,7 +83,7 @@ A. House Washing (Base Pricing) (we use the soft-wash method)(no job less than 1
 5000+ sq/ft: $700 - $900 (ask questions about porch, dormers), (human review needed)
 3-Story: (ask if it is 4 sides or just 3 sides like a row home)
 2400-2600 sq/ft: $360-420 (Clean) / $400 -$450 (Dirty)
-2600-3000 sq/ft: $440-490 (Clean) / $470 -$520 (Dirty)
+2600-3000 sq/ft: $440-490 (Clean) / $470 -$520 (Dirty)
 3000-3500 sq/ft: $490-540 (Clean) / $460-510 (Dirty)
 3500-4000 sq/ft: $530-600 (Clean) / $600-$680 (Dirty) (ask questions about porch, add 30 if they have a porch; dormers add 20 per dormer if 1st story and 30 if second story dormer)(Human review)
 4000-5000 sq/ft: $500-650 (Clean) / $600 -$(Dirty) (ask questions about porch, add 30 if they have a porch; dormers add 20 per dormer if 1st story and 30 if second story dormer)(Human review)
@@ -88,15 +94,15 @@ Chimney that is vinyl only add 30 more.
 If they have a small front step we can do that for free if they ask.
 If they are wanting window screens washed we can do free unless there is more than 10. then charge 20-50 based on the amount.
 If they want the front porch, columns, poles cleaned, we will do the parts above the ground (poles, railings), but ASK if they want the ground of the porch then we treat it like getting a patio or deck wash so get the dimensions and price it but apply a 25% discount; if its less than 100 sqft then its free).
-For every dormer that they have charge 20 more if its a first story dormer or 30 more if its a second story dormer. If so, ASK if its a first story or second story dormer. 
+For every dormer that they have charge 20 more if its a first story dormer or 30 more if its a second story dormer. If so, ASK if its a first story or second story dormer.
 Window cleaning if they ask only... 5 per window or 10 per second story window. (ask them how many windows or say we can count them manually). The soft washing will clean the windows well but not perfectly and sometimes hard water spots remain.
 
 B. Decks (per sq/ft)
-Wood: $0.46 | Composite/Trek: $0.43 | Vinyl/PVC: $0.38
+Wood: $0.50 | Composite/Trek: $0.46 | Vinyl/PVC: $0.40
 Condition: Add $0.02 per sq/ft if "really dirty."
-Condition (age/quality): Add $0.02 per sq/ft if "old or breaking or paint chipping badly."
-Steps: $3/step (Vinyl) or $4/step (Wood/Composite).
-Spindles: $1/foot (Wood) or $0.80/sq ft (Vinyl).
+Condition (age/quality): Add $0.02 per sq/ft if "old or breaking or paint chipping."
+Steps: $4/step (Vinyl) or $6/step (Wood/Composite).
+Spindles: $3/foot (Wood) or $0.80/foot (Vinyl).
 
 C. Patios & Walkways (per sq/ft)
 Concrete: $0.38 | Pavers/Brick: $0.42 | Slab: $0.46
@@ -108,10 +114,10 @@ Vinyl/Metal: $1.3 | Wood: $1.7 if wood structure with large gaps. $2 if solid no
 Condition: Add $0.10 per foot if "really dirty."
 Sides: IMPORTANT — ALWAYS ask the customer: "Do you want just one side cleaned, or both sides?" The base price above is for ONE side only. If they want BOTH sides, double the price. Never skip this question.
 Wood type: IMPORTANT — ALWAYS ask the customer if its wood: "Is the wooden fence like a post then 2-3 beams to the next post, is it solid with no gaps?" (then follow the pricing change)
-E. Gutters (Base Pricing)
-1-Story: $90 | Mixed (1&2): $120 | 2-Story: $150 | 3-Story: $240
+E. Gutters (Base Pricing)(if only want one side then cut in half)
+1-Story full house: $90-140 | Mixed (1&2) full house: $130-180 | 2-Story Full house: $160-210 | 3-Story: $240-$300. 
+House size: If the house is bigger than 2800 square feet then add $40. If bigger than 4000 sq/ft then add $100
 If there is not much in the gutters we will charge less. Or for an inspection we charge less. We dont fix gutters unless its simple.
-House Size: Add $20 for every 500 sq/ft of the house.
 Neglect: Add $40 if not cleaned in 3+ years (and no gutter guards).
 
 F. We do not offer roof washing generally. Ask them to describe what they mean by roof washing and our team will determine. Generally we can help with small areas but not the full roof softwash.
@@ -127,7 +133,7 @@ Rule 1: The "Quote Reveal" - When giving a price, calculate the base price inter
 
 Would you like to add another service or see our availability?"
 Rule 2: Minimum Service Fee (CRITICAL) - After calculating any quote, CHECK if it is under $120. If the calculated price is below $120, do NOT show the calculated price. Instead say: "We can certainly help with that! Please note we have a minimum service visit fee of $120." The quote becomes $120 flat — no range needed. This applies to ALL services including partial house washes, small fences, small patios, partial gutters, etc. ALWAYS enforce this.
-Rule 3: Bundling (The Parlay) - If a user is getting a Fence or Gutter quote in addition to a House Wash, let them know: "Since you're bundling this with a house wash, we'll be able to apply a discount to the final total once our team reviews the project." 30% discount to only the second or third item. 
+Rule 3: Bundling (The Parlay) - If a user is getting a Fence or Gutter quote in addition to a House Wash, let them know: "Since you're bundling this with a house wash, we'll be able to apply a discount to the final total once our team reviews the project." 30% discount to only the second or third item.
 Rule 4: Plant & Pet Safety - If asked about plant or pet safety, reassure users: "We use professional-grade soaps safe for all plants and pets." That is all — do not mention bleach, discoloration, or tree leaves.
 Rule 5: Veterans & Seniors Discount - ONLY mention this if the customer asks about discounts. We offer a 10% discount for veterans and a 10% discount for seniors. These do NOT stack — if someone qualifies for both, they still only get 10% off. Apply it to the total before presenting the quote.
 
@@ -143,11 +149,11 @@ If they want a House:
    - If they give an address: call the lookup_property tool. If it returns data, confirm with the customer: "I can see your home is about [X] sq ft and [Y] stories and [Z] type of siding — does that sound right?" Then skip to material question.
    - If they give stories/sq ft directly: use what they provide and continue normally.
    - If the lookup fails or returns no data, fall back to asking manually.
-2. "How many stories is it? 
+2. "How many stories is it?
 3. "What is the primary material? (Vinyl, Wood, Brick, etc.)"
 4. "Do you have any dormers, a porch you want cleaned, or a chimney needed to be cleaned?" (ask clarifying question if needed especially if the chimney is part of the vinyl or brick/stucco.)
 5. "How long has it been since the last cleaning? and how dirty would you say it is?"
-Rule 0 applies: Get phone number before revealing the quote; also if they didn't give their name then ask that too. 
+Rule 0 applies: Get phone number before revealing the quote; also if they didn't give their name then ask that too.
 
 If they want a Deck:(ask one question at a time)
 1. "What is the approximate square footage?"
@@ -197,11 +203,26 @@ Booking Rules:
 - Ask if they have any questions afterwards.
 - Travel/Service Area: If a customer asks whether we serve their area, or mentions a location, use the check_distance tool with their town/address to look up the actual driving distance and time from Quakertown, PA. If the drive is under 1 hour, we serve that area with no extra charge. If 1-2 hours, we charge an extra driving fee of $20-$100 depending on distance. If over 2 hours, let them know it may be outside our usual range but we do some jobs on the NJ coast each year — offer to have Luke reach out personally. Always use the tool rather than guessing distances.
 
-IMPORTANT:
-- When you have collected the customer's name and at least a service type, call the save_lead_to_airtable tool automatically. Do this silently — don't tell the customer you're saving their info. Include the conversationLog field with a JSON string of the full conversation so far.
-- ALSO call save_lead_to_airtable immediately after giving a quote (with the price). Many customers leave after seeing the quote without booking, so this is critical — capture everything at this point.
-- When the conversation is fully complete (booking made or declined), call save_lead_to_airtable again with isComplete: true to update the record.
-- Always include the conversationLog field with every save_lead_to_airtable call. It should be a JSON string of all user and assistant messages in the conversation.
+AIRTABLE LOGGING (CRITICAL — follow exactly):
+We use a 3-table Airtable schema: Clients, Jobs, Conversations. Inbound and outbound chat messages are logged automatically by the server — you do NOT need to log individual messages yourself. You only need to call THREE tools at the right moments:
+
+1) upsert_client — Call this AS SOON AS you have the customer's name AND any one of: phone, email, or address. Pass everything you currently know (firstName, fullName, phone, email, address). If you learn more later (e.g. they share their phone after you already had the email), call upsert_client AGAIN with the updated info — it will find and update the existing record. This is what creates the Client row that all messages and jobs hang off of.
+
+2) save_quote_job — Call this IMMEDIATELY when you reveal a quote (any price/range). Pass:
+   - serviceType: short label like "House wash + patio" or "Gutter clean"
+   - propertySnapshot: 1-line summary of the property (sq ft, stories, material, address)
+   - quote: the FULL customer-facing quote text (with the range, e.g. "$310-$360")
+   - quoteAmount: the LOW end of the range as a plain NUMBER (e.g. 310, not "$310")
+   - reasoning: a short note on how you got there (e.g. "2-story 2200 sqft vinyl, dirty")
+   - concerns: any objections the customer raised
+   This creates a Job row linked to the Client. Many customers leave right after seeing the quote, so this is critical.
+
+3) confirm_booking — Call this when the customer confirms a specific date for booking. Pass bookingDate (YYYY-MM-DD) and the customer's confirmation text.
+
+Rules:
+- Never call save_quote_job without first having called upsert_client at least once in the conversation. The Job needs a Client.
+- ALWAYS call upsert_client first, then save_quote_job.
+- If you re-quote with new information, call save_quote_job again — a new Job row is fine.
 - Only answer using the knowledge in this prompt. If you don't know something, say: "That's a great question — I couldn't find that information in the company's documentation."
 - Never request passwords or payment info.
 - Never pretend to be a human.
@@ -213,25 +234,55 @@ const tools = [
   {
     type: "function",
     function: {
-      name: "save_lead_to_airtable",
+      name: "upsert_client",
       description:
-        "Save a lead to Airtable. Call this silently as soon as you have the customer's name and phone number. Call again with isComplete:true when the full conversation ends.",
+        "Find an existing client by phone or email, or create a new one. Call AS SOON AS you have the customer's name AND any one of phone/email/address. Call again to update with new info as the conversation progresses. Returns the clientId.",
       parameters: {
         type: "object",
         properties: {
-          firstName:       { type: "string" },
-          fullName:        { type: "string" },
-          email:           { type: "string" },
-          phone:           { type: "string" },
-          serviceType:     { type: "string" },
-          propertyDetails: { type: "string", description: "2-sentence summary of the property" },
-          quote:           { type: "string", description: "The price and service details quoted" },
-          concerns:        { type: "string", description: "Any concerns or special questions raised" },
-          errors:          { type: "string", description: "Any questions the bot could not answer" },
-          isComplete:      { type: "boolean", description: "true if conversation fully finished, false if still in progress" },
-          conversationLog: { type: "string", description: "Full conversation history as JSON string. Always include this." },
+          firstName: { type: "string", description: "Customer's first name" },
+          fullName:  { type: "string", description: "Customer's full name if known" },
+          phone:     { type: "string", description: "Customer's phone number" },
+          email:     { type: "string", description: "Customer's email" },
+          address:   { type: "string", description: "Customer's full address" },
         },
         required: ["firstName"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "save_quote_job",
+      description:
+        "Save a Job (quote) row to Airtable. Call this IMMEDIATELY when you reveal a price/range to the customer. Requires that upsert_client has been called first.",
+      parameters: {
+        type: "object",
+        properties: {
+          serviceType:      { type: "string", description: "Short label e.g. 'House wash + patio'" },
+          propertySnapshot: { type: "string", description: "1-line property summary (sqft, stories, material, address)" },
+          quote:            { type: "string", description: "Full customer-facing quote text including the range" },
+          quoteAmount:      { type: "number", description: "LOW end of the range as a plain number, e.g. 310 (not '$310')" },
+          reasoning:        { type: "string", description: "Short note on how the price was calculated" },
+          concerns:         { type: "string", description: "Any objections or concerns the customer raised" },
+        },
+        required: ["serviceType", "quote", "quoteAmount"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "confirm_booking",
+      description:
+        "Update the most recent Job to Booked status with the agreed date. Call this when the customer confirms a specific date.",
+      parameters: {
+        type: "object",
+        properties: {
+          bookingDate:        { type: "string", description: "Date in YYYY-MM-DD format" },
+          customerConfirmText:{ type: "string", description: "The customer's confirmation message text" },
+        },
+        required: ["bookingDate"],
       },
     },
   },
@@ -305,45 +356,206 @@ const tools = [
   },
 ];
 
-// ─── Tool Implementations ────────────────────────────────────────────────────
+// ─── Airtable helpers ────────────────────────────────────────────────────────
 
-async function saveToAirtable(data) {
+function airtableUrl(table) {
+  return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
+}
+
+function airtableHeaders() {
+  return {
+    Authorization:  `Bearer ${process.env.AIRTABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+
+// Fetch a client by record id and return whether they have phone or email.
+// Used at the end of each chat turn so the frontend knows whether to say
+// "we'll reach out" in the post-quote follow-up nudge.
+async function getClientContact(clientId) {
   try {
-    const fields = {
-      Name:                    data.firstName    || "",
-      "Full name":             data.fullName     || "",
-      email:                   data.email        || "",
-      phone:                   data.phone        || "",
-      "Service Type":          data.serviceType  || "",
-      "Property Details":      data.propertyDetails || "",
-      Quote:                   data.quote        || "",
-      Concerns:                data.concerns     || "",
-      Error:                   data.errors       || "",
-      "Lead Status":           data.isComplete   ? "New" : "Incomplete",
-      "Date of Conversation":  new Date().toISOString(),
-      "Conversation Log":      data.conversationLog || "",
-    };
-
-    Object.keys(fields).forEach((k) => { if (fields[k] === "") delete fields[k]; });
-
-    const res = await fetch(
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/Main`,
-      {
-        method: "POST",
-        headers: {
-          Authorization:  `Bearer ${process.env.AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ fields }),
-      }
-    );
-
-    return await res.json();
+    if (!clientId) return { hasContact: false };
+    const res = await fetch(`${airtableUrl(AT_CLIENTS)}/${clientId}`, {
+      headers: airtableHeaders(),
+    });
+    const data = await res.json();
+    if (data.error || !data.fields) return { hasContact: false };
+    const phone = data.fields["Phone"] || "";
+    const email = data.fields["Email"] || "";
+    return { hasContact: Boolean(phone || email) };
   } catch (err) {
-    console.error("Airtable error:", err);
+    console.error("Airtable getClientContact error:", err);
+    return { hasContact: false };
+  }
+}
+
+// Find a client by phone OR email. Returns the Airtable record_id or null.
+async function findClient({ phone, email }) {
+  try {
+    const clauses = [];
+    if (phone) clauses.push(`{Phone}='${phone.replace(/'/g, "\\'")}'`);
+    if (email) clauses.push(`LOWER({Email})=LOWER('${email.replace(/'/g, "\\'")}')`);
+    if (clauses.length === 0) return null;
+
+    const formula = clauses.length === 1 ? clauses[0] : `OR(${clauses.join(",")})`;
+    const url = `${airtableUrl(AT_CLIENTS)}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`;
+
+    const res = await fetch(url, { headers: airtableHeaders() });
+    const data = await res.json();
+    if (data.records && data.records.length > 0) {
+      return data.records[0].id;
+    }
+    return null;
+  } catch (err) {
+    console.error("Airtable findClient error:", err);
+    return null;
+  }
+}
+
+// Upsert a client. Returns { clientId, isNew }.
+// If knownClientId is passed, ALWAYS PATCH that record — never search again.
+// This prevents duplicates when the AI calls upsert_client multiple times in
+// one session as it gathers more info.
+async function upsertClient(args, knownClientId = null) {
+  try {
+    // If we already have a clientId for this session, just patch it.
+    let existingId = knownClientId;
+
+    // Otherwise, try to find by phone or email.
+    if (!existingId) {
+      existingId = await findClient({ phone: args.phone, email: args.email });
+    }
+
+    const fields = {};
+    if (args.firstName) fields["Name"]      = args.firstName;
+    if (args.fullName)  fields["Full name"] = args.fullName;
+    if (args.phone)     fields["Phone"]     = args.phone;
+    if (args.email)     fields["Email"]     = args.email;
+    if (args.address)   fields["Address"]   = args.address;
+    fields["Source"] = "Website";
+
+    if (existingId) {
+      // PATCH update
+      const res = await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, {
+        method:  "PATCH",
+        headers: airtableHeaders(),
+        body:    JSON.stringify({ fields }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        console.error("Airtable client PATCH error:", data.error);
+        return { error: data.error.message || "PATCH failed" };
+      }
+      return { clientId: existingId, isNew: false };
+    } else {
+      // POST create
+      // First contacted = today
+      fields["First contacted"] = new Date().toISOString().split("T")[0];
+      const res = await fetch(airtableUrl(AT_CLIENTS), {
+        method:  "POST",
+        headers: airtableHeaders(),
+        body:    JSON.stringify({ fields }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        console.error("Airtable client POST error:", data.error);
+        return { error: data.error.message || "POST failed" };
+      }
+      return { clientId: data.id, isNew: true };
+    }
+  } catch (err) {
+    console.error("Airtable upsertClient error:", err);
     return { error: err.message };
   }
 }
+
+// Create a Job row. Returns { jobId } or { error }.
+async function createJob(clientId, args, conversationLog) {
+  try {
+    if (!clientId) return { error: "clientId is required to create a Job" };
+
+    const fields = {
+      "Client":           [clientId],
+      "Service type":     args.serviceType || "",
+      "Property snapshot":args.propertySnapshot || "",
+      "Quote":            args.quote || "",
+      "Quote date":       new Date().toISOString().split("T")[0],
+      "Lead status":      "Quoted",
+      "Source channel":   SOURCE_CHANNEL,
+    };
+    if (typeof args.quoteAmount === "number") fields["Quote amount"] = args.quoteAmount;
+    if (args.reasoning) fields["Reasoning"] = args.reasoning;
+    if (args.concerns)  fields["Concerns"]  = args.concerns;
+    if (conversationLog) fields["Conversation log"] = conversationLog;
+
+    const res = await fetch(airtableUrl(AT_JOBS), {
+      method:  "POST",
+      headers: airtableHeaders(),
+      body:    JSON.stringify({ fields }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      console.error("Airtable job POST error:", data.error);
+      return { error: data.error.message || "POST failed" };
+    }
+    return { jobId: data.id };
+  } catch (err) {
+    console.error("Airtable createJob error:", err);
+    return { error: err.message };
+  }
+}
+
+// PATCH a Job — used for booking confirmation.
+async function updateJob(jobId, fields) {
+  try {
+    if (!jobId) return { error: "jobId required" };
+    const res = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, {
+      method:  "PATCH",
+      headers: airtableHeaders(),
+      body:    JSON.stringify({ fields }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      console.error("Airtable job PATCH error:", data.error);
+      return { error: data.error.message || "PATCH failed" };
+    }
+    return { jobId: data.id };
+  } catch (err) {
+    console.error("Airtable updateJob error:", err);
+    return { error: err.message };
+  }
+}
+
+// Log a single conversation turn.
+async function logConversation({ clientId, jobId, direction, author, message, intent }) {
+  try {
+    if (!clientId) return; // Can't log without a client link
+    const fields = {
+      "Client":    [clientId],
+      "Channel":   "Website chatbot",
+      "Direction": direction, // "Inbound" | "Outbound"
+      "Author":    author,    // "Customer" | "AI bot"
+      "Message":   message || "",
+      "Timestamp": new Date().toISOString(),
+    };
+    if (jobId)  fields["Job"]    = [jobId];
+    if (intent) fields["Intent"] = intent;
+
+    const res = await fetch(airtableUrl(AT_CONVERSATIONS), {
+      method:  "POST",
+      headers: airtableHeaders(),
+      body:    JSON.stringify({ fields }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      console.error("Airtable conversation POST error:", data.error);
+    }
+  } catch (err) {
+    console.error("Airtable logConversation error:", err);
+  }
+}
+
+// ─── Calendar / property / distance tools (unchanged) ───────────────────────
 
 async function checkCalendarAvailability(weeksAhead = 4) {
   try {
@@ -437,7 +649,6 @@ async function lookupProperty(address) {
     );
     const data = await res.json();
 
-    // Rentcast returns an array; grab the first match
     const prop = Array.isArray(data) ? data[0] : data;
     if (!prop || prop.statusCode) {
       return { error: "Property not found. Ask the customer for details manually." };
@@ -498,16 +709,59 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST")   return res.status(405).end();
 
-  // Initialize OpenAI here so it reads the env var at request time
   if (!process.env.OPENAI_API_KEY) {
     return res.status(500).json({ error: "OPENAI_API_KEY is not configured." });
   }
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const { messages } = req.body;
+  // The widget now sends clientId/jobId persisted in localStorage so we can
+  // auto-log conversation turns to the right Client/Job rows.
+  // pendingOutbound: { message, intent } — log-only mode (no AI call), used
+  //   by the 30-second nudge timer when the customer hasn't replied.
+  const {
+    messages,
+    clientId: incomingClientId,
+    jobId:    incomingJobId,
+    pendingOutbound,
+  } = req.body;
+
+  // ── Log-only mode (used by the post-quote nudge) ─────────────────────────
+  if (pendingOutbound && pendingOutbound.message) {
+    const cid = incomingClientId || null;
+    const jid = incomingJobId    || null;
+    if (cid) {
+      await logConversation({
+        clientId: cid,
+        jobId:    jid,
+        direction:"Outbound",
+        author:   "AI bot",
+        message:  pendingOutbound.message,
+        intent:   pendingOutbound.intent || "nudge",
+      });
+      // Also append to the Job's rolling Conversation log if we have a Job
+      if (jid && Array.isArray(messages)) {
+        const fullConvo = JSON.stringify(
+          [...messages, { role: "assistant", content: pendingOutbound.message }]
+        );
+        updateJob(jid, { "Conversation log": fullConvo }).catch(() => {});
+      }
+    }
+    return res.status(200).json({ ok: true, clientId: cid, jobId: jid });
+  }
+
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: "messages array required" });
   }
+
+  // These get updated as the AI calls upsert_client / save_quote_job during
+  // this turn, and are returned to the frontend so it can persist them.
+  let clientId = incomingClientId || null;
+  let jobId    = incomingJobId    || null;
+  let quoteJustSent = false; // Set true if save_quote_job ran this turn
+
+  // The latest user message — used for auto-logging the inbound turn.
+  const latestUserMessage =
+    [...messages].reverse().find((m) => m.role === "user")?.content || "";
 
   try {
     let response = await openai.chat.completions.create({
@@ -532,8 +786,52 @@ export default async function handler(req, res) {
           args = {};
         }
 
-        if (toolCall.function.name === "save_lead_to_airtable") {
-          result = await saveToAirtable(args);
+        if (toolCall.function.name === "upsert_client") {
+          // Pass the known clientId so we PATCH the existing row instead of
+          // searching again (which could miss it if name-only on first call).
+          result = await upsertClient(args, clientId);
+          if (result.clientId) clientId = result.clientId;
+        } else if (toolCall.function.name === "save_quote_job") {
+          // Need a clientId; if AI somehow forgot to upsert first, try a
+          // best-effort upsert with whatever name is in the conversation.
+          if (!clientId) {
+            const guessName =
+              messages.find((m) => m.role === "user")?.content || "Unknown";
+            const upsertRes = await upsertClient({ firstName: guessName }, null);
+            if (upsertRes.clientId) clientId = upsertRes.clientId;
+          }
+          if (clientId) {
+            const convoLog = JSON.stringify(
+              [...messages, { role: "assistant", content: assistantMessage.content || "" }]
+            );
+            result = await createJob(clientId, args, convoLog);
+            if (result.jobId) {
+              jobId = result.jobId;
+              quoteJustSent = true;
+            }
+          } else {
+            result = { error: "Could not establish a clientId before saving Job" };
+          }
+        } else if (toolCall.function.name === "confirm_booking") {
+          if (jobId) {
+            result = await updateJob(jobId, {
+              "Booking date": args.bookingDate,
+              "Lead status":  "Booked",
+            });
+            // Also log the customer's confirmation message with intent
+            if (clientId && args.customerConfirmText) {
+              await logConversation({
+                clientId,
+                jobId,
+                direction: "Inbound",
+                author:    "Customer",
+                message:   args.customerConfirmText,
+                intent:    "booking_confirmed",
+              });
+            }
+          } else {
+            result = { error: "No jobId available — call save_quote_job first" };
+          }
         } else if (toolCall.function.name === "check_calendar_availability") {
           result = await checkCalendarAvailability(args.weeksAhead);
         } else if (toolCall.function.name === "lookup_property") {
@@ -568,24 +866,61 @@ export default async function handler(req, res) {
       assistantMessage = finalResponse.choices[0].message;
     }
 
-    // Fallback: if reply contains a quote and AI didn't save, auto-save the convo
     const replyText = assistantMessage.content || "";
-    const hasQuote  = /\$\d{2,}/.test(replyText) && /estimat|price|quote|total/i.test(replyText);
-    const aiDidSave = assistantMessage.tool_calls?.some(
-      (tc) => tc.function.name === "save_lead_to_airtable"
-    );
-    if (hasQuote && !aiDidSave) {
-      // Extract name from conversation
-      const firstName = messages.find((m) => m.role === "user")?.content || "Unknown";
-      const fullConvo = [...messages, { role: "assistant", content: replyText }];
-      saveToAirtable({
-        firstName,
-        conversationLog: JSON.stringify(fullConvo),
-        isComplete: false,
+
+    // ─── Auto-log inbound + outbound to Conversations table ─────────────────
+    // We fire-and-forget to keep response time fast. Only logs if we have a
+    // clientId (either passed in from frontend or just created this turn).
+    if (clientId && latestUserMessage) {
+      logConversation({
+        clientId,
+        jobId,
+        direction: "Inbound",
+        author:    "Customer",
+        message:   latestUserMessage,
+      }).catch(() => {});
+    }
+    if (clientId && replyText) {
+      logConversation({
+        clientId,
+        jobId,
+        direction: "Outbound",
+        author:    "AI bot",
+        message:   replyText,
+        intent:    quoteJustSent ? "quote_sent" : undefined,
       }).catch(() => {});
     }
 
-    return res.status(200).json({ reply: replyText });
+    // ── Rolling Job conversation log ──────────────────────────────────────
+    // After a quote exists (jobId set), keep the Job's "Conversation log"
+    // field up to date on every subsequent turn so all post-quote follow-up
+    // questions are visible at-a-glance on the Job row itself. Skip the turn
+    // where save_quote_job just ran (createJob already wrote it then).
+    if (jobId && !quoteJustSent) {
+      const fullConvo = JSON.stringify(
+        [...messages, { role: "assistant", content: replyText }]
+      );
+      updateJob(jobId, { "Conversation log": fullConvo }).catch(() => {});
+    }
+
+    // Look up whether the client has phone or email on file (used by the
+    // post-quote follow-up nudge to decide between "we'll reach out" wording
+    // and a plain contact info reply).
+    let clientHasContact = false;
+    if (clientId) {
+      try {
+        const c = await getClientContact(clientId);
+        clientHasContact = c.hasContact;
+      } catch {}
+    }
+
+    return res.status(200).json({
+      reply:            replyText,
+      clientId:         clientId || null,
+      jobId:            jobId    || null,
+      quoteJustSent:    quoteJustSent,
+      clientHasContact: clientHasContact,
+    });
 
   } catch (err) {
     console.error("Chat handler error:", err);

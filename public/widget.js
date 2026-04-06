@@ -13,9 +13,97 @@
   const LOGO_URL = ORIGIN + "/logo.png";
   const STORAGE_KEY = "lp-chat-session";
 
+  // ─── Airtable session IDs (persisted in localStorage) ─────────────────────
+  let clientId = null;
+  let jobId    = null;
+
+  // ─── Post-quote nudge sequence (max once per quote) ───────────────────────
+  // Stage 1 — 15s after the quote: "When were you thinking of getting this done?"
+  // Stage 2 — 30s after stage 1 with no response: contact info reply (with
+  //           "we'll reach out" wording if we already have phone/email).
+  // Both stages defer if the customer is actively typing.
+  const NUDGE_DELAY_MS    = 15000;
+  const FOLLOWUP_DELAY_MS = 30000;
+  const NUDGE_TEXT = "When were you thinking of getting this done? I can show you some dates of our earliest openings or in a month from now.";
+  const FOLLOWUP_TEXT_HAS_CONTACT =
+    "No worries! Here's our contact info if you'd like to reach out directly:\n\n\uD83D\uDCE9 lhppressurewashing@gmail.com\n\uD83D\uDCF1 (267) 912-8285\n\nAnd we'll have someone from our team follow up with you shortly. \uD83D\uDE4F";
+  const FOLLOWUP_TEXT_NO_CONTACT =
+    "No worries! Here's our contact info if you'd like to reach out directly:\n\n\uD83D\uDCE9 lhppressurewashing@gmail.com\n\uD83D\uDCF1 (267) 912-8285\n\nFeel free to text or email us anytime — we'd love to help. \uD83D\uDE4F";
+
+  let nudgeTimer    = null;
+  let followupTimer = null;
+  // Sequence guard: once a quote triggers the sequence, neither stage will
+  // run a second time until a new quote arrives (or chat is reset).
+  let nudgeSequenceConsumed = false;
+  let clientHasContact      = false;
+
+  function cancelNudge() {
+    if (nudgeTimer)    { clearTimeout(nudgeTimer);    nudgeTimer    = null; }
+    if (followupTimer) { clearTimeout(followupTimer); followupTimer = null; }
+  }
+
+  async function logOutbound(text, intent) {
+    try {
+      await fetch(API_URL, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          messages,
+          clientId,
+          jobId,
+          pendingOutbound: { message: text, intent },
+        }),
+      });
+    } catch {}
+  }
+
+  async function fireNudge() {
+    addMessage("bot", NUDGE_TEXT);
+    messages.push({ role: "assistant", content: NUDGE_TEXT });
+    saveSession();
+    await logOutbound(NUDGE_TEXT, "nudge");
+    // After the first nudge, schedule the contact-info follow-up
+    scheduleFollowup();
+  }
+
+  async function fireFollowup() {
+    const text = clientHasContact ? FOLLOWUP_TEXT_HAS_CONTACT : FOLLOWUP_TEXT_NO_CONTACT;
+    addMessage("bot", text);
+    messages.push({ role: "assistant", content: text });
+    saveSession();
+    await logOutbound(text, "nudge_followup");
+    nudgeSequenceConsumed = true; // Sequence done — no more nudges this quote
+  }
+
+  function scheduleNudge() {
+    cancelNudge();
+    if (nudgeSequenceConsumed) return;
+    nudgeTimer = setTimeout(() => {
+      nudgeTimer = null;
+      if (inputEl && inputEl.value && inputEl.value.trim().length > 0) {
+        scheduleNudge(); // Defer — they're typing
+        return;
+      }
+      fireNudge();
+    }, NUDGE_DELAY_MS);
+  }
+
+  function scheduleFollowup() {
+    if (followupTimer) { clearTimeout(followupTimer); followupTimer = null; }
+    if (nudgeSequenceConsumed) return;
+    followupTimer = setTimeout(() => {
+      followupTimer = null;
+      if (inputEl && inputEl.value && inputEl.value.trim().length > 0) {
+        scheduleFollowup(); // Defer — they're typing
+        return;
+      }
+      fireFollowup();
+    }, FOLLOWUP_DELAY_MS);
+  }
+
   // ─── LocalStorage helpers ──────────────────────────────────────────────────
   function saveSession() {
-    const data = { messages, ts: Date.now() };
+    const data = { messages, clientId, jobId, ts: Date.now() };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
   }
 
@@ -31,6 +119,9 @@
         localStorage.removeItem(STORAGE_KEY);
         return null;
       }
+      // Restore the Airtable session IDs if they were saved
+      if (data.clientId) clientId = data.clientId;
+      if (data.jobId)    jobId    = data.jobId;
       return data.messages || null;
     } catch { return null; }
   }
@@ -408,6 +499,7 @@
 
   async function sendMessage(text) {
     if (!text.trim() || isWaiting) return;
+    cancelNudge(); // Customer responded — cancel any pending nudge
     hideWelcome();
     messagesEl.querySelectorAll(".lp-suggestions").forEach((el) => el.remove());
     addMessage("user", text.trim());
@@ -422,10 +514,21 @@
       const res = await fetch(API_URL, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ messages }),
+        body:    JSON.stringify({ messages, clientId, jobId }),
       });
       const data = await res.json();
       hideTyping();
+      // Persist Airtable record IDs returned by the server so we can pass
+      // them back next turn (avoids duplicate Client rows).
+      if (data.clientId) clientId = data.clientId;
+      if (data.jobId)    jobId    = data.jobId;
+      // Track whether we have phone/email on file for the follow-up wording
+      clientHasContact = Boolean(data.clientHasContact);
+      // If a quote was just saved, reset the sequence and schedule the nudge.
+      if (data.quoteJustSent) {
+        nudgeSequenceConsumed = false;
+        scheduleNudge();
+      }
       const reply = data.reply || "Sorry, something went wrong. Please try again!";
 
       if (replyHasQuote(reply)) {
@@ -459,8 +562,13 @@
   }
 
   function resetChat() {
+    cancelNudge();
+    nudgeSequenceConsumed = false;
+    clientHasContact      = false;
     messages.length = 0;
     messagesEl.innerHTML = "";
+    clientId = null;
+    jobId    = null;
     greeted       = false;
     welcomeHidden = false;
     welcomeEl.classList.remove("lp-welcome-hidden");
