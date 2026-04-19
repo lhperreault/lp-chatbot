@@ -348,6 +348,27 @@
   background: #22c55e;
   border-radius: 50%;
 }
+#lpWrap .chat-hdr-spacer { flex: 1 1 auto; }
+#lpWrap .lp-restart-wrap { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+#lpWrap .lp-restart-btn {
+  all: unset;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: #9ca3af;
+  -webkit-text-fill-color: #9ca3af;
+  transition: background .15s, color .15s;
+}
+#lpWrap .lp-restart-btn:hover { background: #f3f4f6; color: #4b5563; -webkit-text-fill-color: #4b5563; }
+#lpWrap .lp-restart-btn.armed { color: #ef4444; -webkit-text-fill-color: #ef4444; background: #fef2f2; }
+#lpWrap .lp-restart-text {
+  font-size: 11px;
+  color: #ef4444 !important;
+  -webkit-text-fill-color: #ef4444 !important;
+  white-space: nowrap;
+  font-weight: 500;
+}
 
 #lpWrap .chat-msgs {
   flex: 1 1 auto;
@@ -595,6 +616,13 @@
         <div class="chat-name">LP Pressure Wash — Estimator</div>
         <div class="chat-status"><span class="status-dot"></span>Online now</div>
       </div>
+      <div class="chat-hdr-spacer"></div>
+      <div class="lp-restart-wrap">
+        <span class="lp-restart-text" id="lpRestartText" style="display:none">Tap again</span>
+        <button type="button" class="lp-restart-btn" id="lpRestartBtn" onclick="lpRestartTap()" title="Start over" aria-label="Start over">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 10 9 10"/></svg>
+        </button>
+      </div>
     </div>
     <div class="chat-msgs" id="chatMsgs">
       <div class="typing" id="typing"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div>
@@ -835,6 +863,71 @@
   window.lpKey = function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.lpSend(); }
   };
+
+  // ── Restart button (two-tap confirm) ─────────────────────────────────────
+  // Airtable data already collected stays in Airtable — this only clears the
+  // local widget so the customer can start a new chat.
+  let restartArmed = false;
+  let restartTimer = null;
+  window.lpRestartTap = function () {
+    const btn  = document.getElementById('lpRestartBtn');
+    const text = document.getElementById('lpRestartText');
+    if (restartArmed) {
+      if (restartTimer) clearTimeout(restartTimer);
+      doRestart();
+      return;
+    }
+    restartArmed = true;
+    btn && btn.classList.add('armed');
+    if (text) text.style.display = '';
+    restartTimer = setTimeout(() => {
+      restartArmed = false;
+      btn && btn.classList.remove('armed');
+      if (text) text.style.display = 'none';
+    }, 3000);
+  };
+
+  function doRestart() {
+    restartArmed = false;
+    const btn  = document.getElementById('lpRestartBtn');
+    const text = document.getElementById('lpRestartText');
+    btn && btn.classList.remove('armed');
+    if (text) text.style.display = 'none';
+
+    clearState();
+    fd.services = []; fd.condition = ''; fd.firstName = ''; fd.phone = ''; fd.address = '';
+    history.length = 0;
+    clientId = null; jobId = null; sending = false; pendingFirstResponse = null;
+    currentStep = 1; currentPhase = 'form';
+
+    document.querySelectorAll('#lpWrap .lp-pick.sel').forEach(el => el.classList.remove('sel'));
+    const n  = document.getElementById('iName');
+    const p  = document.getElementById('iPhone');
+    const a  = document.getElementById('iAddr');
+    if (n) n.value = ''; if (p) p.value = ''; if (a) a.value = '';
+    ['e1','e2','e3'].forEach(hideErr);
+
+    const formEl = document.getElementById('lpForm');
+    const transEl = document.getElementById('lpTransition');
+    const chatEl = document.getElementById('lpChat');
+    formEl.style.display = '';
+    formEl.classList.remove('hide');
+    transEl.classList.remove('active');
+    transEl.style.display = '';
+    ['tl1','tl2','tl3'].forEach(id => document.getElementById(id)?.classList.remove('show'));
+    chatEl.classList.remove('active');
+
+    const msgs = document.getElementById('chatMsgs');
+    const typing = document.getElementById('typing');
+    if (msgs && typing) {
+      Array.from(msgs.children).forEach(c => { if (c !== typing) msgs.removeChild(c); });
+      typing.classList.remove('show');
+    }
+    const chatInp = document.getElementById('chatInp');
+    if (chatInp) { chatInp.value = ''; window.lpGrow(chatInp); }
+
+    setStep(1);
+  }
 
   // ── Restore state on load if we have a recent session ────────────────────
   function restoreFromSaved() {

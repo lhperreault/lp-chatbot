@@ -111,21 +111,25 @@ async function logConversation({ clientId, jobId, direction, author, message, in
 async function lookupProperty(address) {
   try {
     if (!process.env.RENTCAST_API_KEY) return { error: "Property lookup not configured" };
-    const res = await fetch(
-      `https://api.rentcast.io/v1/properties?address=${encodeURIComponent(address)}`,
-      { headers: { "X-Api-Key": process.env.RENTCAST_API_KEY } }
-    );
+    const url = `https://api.rentcast.io/v1/properties?address=${encodeURIComponent(address)}`;
+    console.log("[rentcast] GET", url);
+    const res = await fetch(url, { headers: { "X-Api-Key": process.env.RENTCAST_API_KEY } });
     const data = await res.json();
+    console.log("[rentcast] status", res.status, "body", JSON.stringify(data).slice(0, 1200));
     const prop = Array.isArray(data) ? data[0] : data;
     if (!prop || prop.statusCode) return { error: "Property not found. Ask the customer for details manually." };
+    console.log("[rentcast] prop keys:", Object.keys(prop));
+    // RentCast uses varying field names across plan tiers; fall back through several.
+    const sqft = prop.squareFootage ?? prop.livingArea ?? prop.buildingSize ?? prop.size ?? null;
+    const stories = prop.stories ?? prop.storiesCount ?? prop.floors ?? prop.numberOfStories ?? null;
     return {
-      squareFootage: prop.squareFootage || null,
-      stories:       prop.stories       || null,
-      bedrooms:      prop.bedrooms      || null,
-      bathrooms:     prop.bathrooms     || null,
-      yearBuilt:     prop.yearBuilt     || null,
-      propertyType:  prop.propertyType  || null,
-      lotSize:       prop.lotSize       || null,
+      squareFootage: sqft,
+      stories:       stories,
+      bedrooms:      prop.bedrooms      ?? null,
+      bathrooms:     prop.bathrooms     ?? null,
+      yearBuilt:     prop.yearBuilt     ?? null,
+      propertyType:  prop.propertyType  ?? null,
+      lotSize:       prop.lotSize       ?? null,
       address:       prop.formattedAddress || address,
     };
   } catch (err) {
@@ -169,7 +173,8 @@ async function bookAppointment(data) {
 function buildSystemPrompt(formData, propertyData) {
   const { firstName, phone, address, services, condition } = formData;
   const svcList = Array.isArray(services) ? services.join(", ") : (services || "");
-  const hasProperty = propertyData && !propertyData.error;
+  // Only treat it as "have property data" if we actually got the critical fields.
+  const hasProperty = propertyData && !propertyData.error && propertyData.squareFootage;
 
   const propertyBlock = hasProperty
     ? `\nPROPERTY DETAILS (already pulled from public records for this address — USE THESE, do not ask for them):
