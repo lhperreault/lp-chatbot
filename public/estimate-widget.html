@@ -615,31 +615,65 @@
 <script>
 (function () {
   const ESTIMATE_URL = 'https://chatbot-t1bk.vercel.app/api/estimate';
+  const STATE_KEY    = 'lp_estimate_state_v1';
+  const STATE_TTL_MS = 30 * 60 * 1000; // 30 min
 
   const fd = { services: [], condition: '', firstName: '', phone: '', address: '' };
   const prog = { 1: 33, 2: 66, 3: 100 };
   const history = [];
   let clientId = null, jobId = null, sending = false;
   let pendingFirstResponse = null;
+  let currentStep = 1;
+  let currentPhase = 'form'; // 'form' | 'transition' | 'chat'
 
-  // Elementor / WordPress sometimes wraps HTML widgets inside an outer <form>.
-  // If the user tabs through our inputs and hits Enter, that outer form
-  // submits and the page reloads — wiping our step and resetting to step 1.
-  // Block any submit that originates from inside our widget.
+  // ── Isolate the widget from any enclosing <form> ──────────────────────────
+  // Elementor / WordPress sometimes wraps HTML widgets inside a <form>.
+  // If we leave the widget inside that form, focusing an input, tapping Enter,
+  // or browser autofill can trigger a form submit → page reload → widget
+  // resets to step 1. We physically move the widget out of any form ancestor.
   const wrap = document.getElementById('lpWrap');
-  const outerForm = wrap && wrap.closest('form');
-  if (outerForm) {
-    outerForm.addEventListener('submit', function (e) {
-      if (wrap.contains(e.target)) { e.preventDefault(); e.stopPropagation(); }
-    }, true);
-  }
-  // Belt-and-suspenders: swallow Enter on our three text inputs.
+  try {
+    const outerForm = wrap && wrap.closest('form');
+    if (outerForm && outerForm.parentNode) {
+      outerForm.parentNode.insertBefore(wrap, outerForm.nextSibling);
+    }
+  } catch {}
+
+  // Belt-and-suspenders: still swallow Enter on the three text inputs and
+  // block any stray submit event that bubbles from inside our widget.
+  document.addEventListener('submit', function (e) {
+    if (wrap && wrap.contains(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
   ['iName', 'iPhone', 'iAddr'].forEach(function (id) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); }
     });
   });
+
+  // ── State persistence ─────────────────────────────────────────────────────
+  // If the page reloads or Elementor re-renders the widget, we restore the
+  // user's progress instead of throwing them back to step 1.
+  function saveState() {
+    try {
+      sessionStorage.setItem(STATE_KEY, JSON.stringify({
+        fd, currentStep, currentPhase, history, clientId, jobId, ts: Date.now()
+      }));
+    } catch {}
+  }
+  function loadState() {
+    try {
+      const raw = sessionStorage.getItem(STATE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data.ts || Date.now() - data.ts > STATE_TTL_MS) {
+        sessionStorage.removeItem(STATE_KEY);
+        return null;
+      }
+      return data;
+    } catch { return null; }
+  }
+  function clearState() { try { sessionStorage.removeItem(STATE_KEY); } catch {} }
 
   function showErr(id) { document.getElementById(id).style.display = 'block'; }
   function hideErr(id) { document.getElementById(id).style.display = 'none'; }
@@ -649,6 +683,8 @@
     document.getElementById('lpS' + n).classList.add('active');
     document.getElementById('lpFill').style.width = prog[n] + '%';
     document.getElementById('lpLabel').textContent = n + ' / 3';
+    currentStep = n;
+    saveState();
   }
 
   window.lpNext = function (step) {
@@ -663,11 +699,13 @@
     el.classList.toggle('sel');
     const v = el.dataset.val, i = fd.services.indexOf(v);
     i > -1 ? fd.services.splice(i, 1) : fd.services.push(v);
+    saveState();
   };
   window.lpPick = function (el, grp) {
     document.querySelectorAll('[data-grp="' + grp + '"]').forEach(c => c.classList.remove('sel'));
     el.classList.add('sel');
     if (grp === 'cond') fd.condition = el.dataset.val;
+    saveState();
   };
 
   window.lpSubmit = function () {
@@ -677,9 +715,10 @@
     hideErr('e3');
     fd.firstName = n; fd.phone = p;
     fd.address = document.getElementById('iAddr').value.trim();
+    currentPhase = 'transition';
+    saveState();
 
     // Fire the first AI call in parallel with the transition screen.
-    // By the time the chat opens, the response is usually already back.
     pendingFirstResponse = fetch(ESTIMATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -703,8 +742,10 @@
   }
 
   function showChat() {
+    document.getElementById('lpForm').style.display = 'none';
     document.getElementById('lpTransition').style.display = 'none';
     document.getElementById('lpChat').classList.add('active');
+    currentPhase = 'chat';
     const typing = document.getElementById('typing');
     typing.classList.add('show');
 
@@ -718,11 +759,13 @@
         if (data.reply) { history.push({ role: 'assistant', content: data.reply }); addBubble(data.reply, 'bot'); }
         if (data.clientId) clientId = data.clientId;
         if (data.jobId)    jobId    = data.jobId;
+        saveState();
       });
       pendingFirstResponse = null;
     } else {
       callEstimate('');
     }
+    saveState();
   }
 
   function addBubble(text, who) {
@@ -760,6 +803,7 @@
       if (data.reply) { history.push({ role: 'assistant', content: data.reply }); addBubble(data.reply, 'bot'); }
       if (data.clientId) clientId = data.clientId;
       if (data.jobId)    jobId    = data.jobId;
+      saveState();
     } catch (err) {
       typing.classList.remove('show');
       addBubble("Sorry, something went wrong. Reach us directly at (267) 912-8285 📱", 'bot');
@@ -784,5 +828,65 @@
   window.lpKey = function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.lpSend(); }
   };
+
+  // ── Restore state on load if we have a recent session ────────────────────
+  function restoreFromSaved() {
+    const saved = loadState();
+    if (!saved) return;
+
+    Object.assign(fd, saved.fd || {});
+    currentStep  = saved.currentStep  || 1;
+    currentPhase = saved.currentPhase || 'form';
+    if (Array.isArray(saved.history)) { history.length = 0; history.push.apply(history, saved.history); }
+    clientId = saved.clientId || null;
+    jobId    = saved.jobId    || null;
+
+    // Re-tick service cards on step 1
+    document.querySelectorAll('#lpS1 .lp-pick').forEach(btn => {
+      if ((fd.services || []).indexOf(btn.dataset.val) > -1) btn.classList.add('sel');
+    });
+    // Re-tick condition on step 2
+    if (fd.condition) {
+      document.querySelectorAll('[data-grp="cond"]').forEach(btn => {
+        if (btn.dataset.val === fd.condition) btn.classList.add('sel');
+      });
+    }
+    // Re-fill step 3 inputs
+    const nameEl  = document.getElementById('iName');
+    const phoneEl = document.getElementById('iPhone');
+    const addrEl  = document.getElementById('iAddr');
+    if (nameEl)  nameEl.value  = fd.firstName || '';
+    if (phoneEl) phoneEl.value = fd.phone     || '';
+    if (addrEl)  addrEl.value  = fd.address   || '';
+
+    if (currentPhase === 'chat') {
+      document.getElementById('lpForm').style.display = 'none';
+      document.getElementById('lpTransition').style.display = 'none';
+      document.getElementById('lpChat').classList.add('active');
+      const msgs = document.getElementById('chatMsgs');
+      const typing = document.getElementById('typing');
+      history.forEach(m => {
+        const d = document.createElement('div');
+        d.className = 'msg ' + (m.role === 'user' ? 'usr' : 'bot');
+        d.innerHTML = '<div class="bubble">' + esc(m.content || '') + '</div>';
+        msgs.insertBefore(d, typing);
+      });
+      msgs.scrollTop = msgs.scrollHeight;
+    } else if (currentPhase === 'transition') {
+      // User hit submit, page reloaded before chat opened — jump straight to chat.
+      currentPhase = 'chat';
+      document.getElementById('lpForm').style.display = 'none';
+      document.getElementById('lpChat').classList.add('active');
+      document.getElementById('typing').classList.add('show');
+      callEstimate('');
+    } else {
+      setStep(currentStep);
+    }
+  }
+
+  // Manual reset (useful for debugging: call lpReset() in console)
+  window.lpReset = function () { clearState(); location.reload(); };
+
+  restoreFromSaved();
 })();
 </script>
