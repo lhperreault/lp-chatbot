@@ -1,7 +1,6 @@
 <!-- LP Pressure Wash — Estimate Widget -->
 <!-- Paste into Elementor HTML block. Verify ESTIMATE_URL below matches your Vercel deployment. -->
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
-<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAdvZ_dOmSsakz-41QpaUM3OxZiq202ofI&libraries=places&loading=async"></script>
 
 <style>
 /* ── Scoped reset (zero specificity via :where) ── */
@@ -487,12 +486,6 @@
   #lpWrap .lp-trust-item { font-size: 10.5px; }
 }
 
-/* Google Places Autocomplete dropdown — lift above Elementor layers */
-.pac-container { z-index: 999999 !important; font-family: 'DM Sans', sans-serif !important; border-radius: 9px !important; box-shadow: 0 6px 24px rgba(0,0,0,0.12) !important; border: 1px solid #e5e7eb !important; margin-top: 4px !important; }
-.pac-item { padding: 8px 12px !important; font-size: 13px !important; cursor: pointer !important; }
-.pac-item:hover { background: #f0f7ff !important; }
-.pac-item-query { font-size: 13px !important; color: #111 !important; }
-.pac-matched { font-weight: 600 !important; }
 </style>
 
 <div id="lpWrap">
@@ -746,31 +739,5 @@
   window.lpKey = function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.lpSend(); }
   };
-
-  // Google Places Autocomplete on the address input
-  function initAddressAutocomplete() {
-    if (!window.google || !window.google.maps || !window.google.maps.places) {
-      return setTimeout(initAddressAutocomplete, 200);
-    }
-    const input = document.getElementById('iAddr');
-    if (!input) return;
-    const ac = new google.maps.places.Autocomplete(input, {
-      componentRestrictions: { country: 'us' },
-      fields: ['formatted_address'],
-      types: ['address']
-    });
-    ac.addListener('place_changed', function () {
-      const p = ac.getPlace();
-      if (p && p.formatted_address) {
-        input.value = p.formatted_address;
-        fd.address = p.formatted_address;
-      }
-    });
-    // Prevent Enter on the address field from submitting a Google suggestion as a form submit
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') e.preventDefault();
-    });
-  }
-  initAddressAutocomplete();
 })();
 </script>
