@@ -174,7 +174,9 @@ Address: ${address || "not provided"}
 Services requested: ${svcList}
 General condition: ${condition}
 
-YOUR FIRST MESSAGE: Greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they selected in one sentence, then immediately ask the first qualification question for their first service. No long preamble.
+YOUR FIRST MESSAGE:
+- If their first service is "House Exterior" AND address is provided, FIRST silently call the lookup_property tool with the address (no text to the customer yet). Then in your first visible message, follow the HOUSE EXTERIOR step 1 template below using the tool result.
+- Otherwise, greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they selected in one sentence, then immediately ask the first qualification question for their first service. No long preamble.
 
 CORE RULES:
 - ONE question per message. Never stack questions.
@@ -195,9 +197,11 @@ CORE RULES:
 QUALIFICATION FLOWS — one question at a time:
 
 HOUSE EXTERIOR 🏠:
-1. "I can give you an estimate two ways — would you like to share your address so I can pull up your property details, or would you prefer to tell me the stories and square footage?"
-   - Address given → call lookup_property → confirm result → skip to material
-   - Manual → ask stories, then sq footage
+0. CRITICAL: You already have the customer's address in CUSTOMER CONTEXT above. On your VERY FIRST turn, BEFORE writing anything to the customer, call the lookup_property tool with that address. Do this silently as a tool call — no intro message first. Wait for the tool response, then write your first customer-facing message based on it.
+1. Once lookup_property returns:
+   - If it returned sqft + stories: "Hey [firstName]! 👋 I pulled up your property — looks like about [X] sq ft and [Y] stories. Does that sound right?" Wait for confirmation.
+   - If lookup failed/returned no data: "Hey [firstName]! 👋 Thanks for the details. Quick question — how many stories is your home, and roughly the square footage?"
+   - If they correct the numbers, use their correction for pricing.
 2. Primary siding material? (Vinyl, Wood, Brick, Stucco, etc.)
 3. Any dormers, porch, or chimney to clean?
 4. How long since last cleaning, and how dirty would you say it is?
@@ -279,51 +283,19 @@ export default async function handler(req, res) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   let clientId = incomingClientId, jobId = incomingJobId, quoteJustSent = false;
   const latestUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || null;
-  const isFirstTurn = messages.length === 0;
 
-  // On the first turn: upsert the lead to Airtable AND (if relevant) prefetch property
-  // details. Running both in parallel so we don't stack their latencies onto the AI call.
-  let propertyContext = "";
-  if (isFirstTurn) {
-    const needsLead = !clientId && formData.firstName && formData.phone;
-    const needsProperty = formData.address
-      && Array.isArray(formData.services)
-      && formData.services.some(s => /house/i.test(s));
-
-    const [leadRes, propRes] = await Promise.all([
-      needsLead
-        ? upsertClient({ firstName: formData.firstName, phone: formData.phone, address: formData.address })
-        : Promise.resolve(null),
-      needsProperty
-        ? lookupProperty(formData.address)
-        : Promise.resolve(null),
-    ]);
-
-    if (leadRes?.clientId) clientId = leadRes.clientId;
-    if (propRes && !propRes.error) {
-      propertyContext = `\n\n=========================================
-PROPERTY DETAILS (pulled from public records — do NOT ask for these):
-- Square footage: ${propRes.squareFootage || "unknown"}
-- Stories: ${propRes.stories || "unknown"}
-- Bedrooms: ${propRes.bedrooms || "unknown"}
-- Bathrooms: ${propRes.bathrooms || "unknown"}
-- Year built: ${propRes.yearBuilt || "unknown"}
-- Property type: ${propRes.propertyType || "unknown"}
-- Lot size: ${propRes.lotSize || "unknown"}
-
-CRITICAL FIRST-MESSAGE RULE (override the generic first-message rule above):
-Because this customer chose house exterior AND we have property data, your FIRST message MUST follow this exact template:
-
-"Hey ${formData.firstName}! 👋 I pulled up your property — looks like about ${propRes.squareFootage || "?"} sq ft and ${propRes.stories || "?"} stories. Does that sound right?"
-
-Do NOT ask about sqft/stories in any other way. Do NOT skip this confirmation. Wait for their reply before moving on. Once they confirm (or correct), proceed to ask about siding material.
-
-If they correct the numbers, use their correction for pricing.
-=========================================`;
-    }
+  // Capture the lead in Airtable on the very first turn, before the AI call.
+  // Guarantees an Airtable row (and the new-lead email) even if OpenAI fails.
+  if (!clientId && formData.firstName && formData.phone) {
+    const r = await upsertClient({
+      firstName: formData.firstName,
+      phone:     formData.phone,
+      address:   formData.address,
+    });
+    if (r.clientId) clientId = r.clientId;
   }
 
-  const systemPrompt = buildSystemPrompt(formData) + propertyContext;
+  const systemPrompt = buildSystemPrompt(formData);
 
   try {
     let response = await openai.chat.completions.create({ model: "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: systemPrompt }, ...messages], tools, tool_choice: "auto" });
