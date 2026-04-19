@@ -1,5 +1,5 @@
 <!-- LP Pressure Wash — Estimate Widget -->
-<!-- Paste into Elementor HTML block. Update ESTIMATE_URL + FORMSPREE_URL below. -->
+<!-- Paste into Elementor HTML block. Verify ESTIMATE_URL below matches your Vercel deployment. -->
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
 
 <style>
@@ -613,8 +613,7 @@
 
 <script>
 (function () {
-  const ESTIMATE_URL  = 'https://chatbot-t1bk.vercel.app/api/estimate';
-  const FORMSPREE_URL = 'https://formspree.io/f/YOUR_FORMSPREE_ID';
+  const ESTIMATE_URL = 'https://chatbot-t1bk.vercel.app/api/estimate';
 
   const fd = { services: [], condition: '', firstName: '', phone: '', address: '' };
   const prog = { 1: 33, 2: 66, 3: 100 };
@@ -657,15 +656,6 @@
     hideErr('e3');
     fd.firstName = n; fd.phone = p;
     fd.address = document.getElementById('iAddr').value.trim();
-
-    const body = new FormData();
-    body.append('name', fd.firstName);
-    body.append('phone', fd.phone);
-    body.append('address', fd.address);
-    body.append('services', fd.services.join(', '));
-    body.append('condition', fd.condition);
-    fetch(FORMSPREE_URL, { method: 'POST', body, headers: { 'Accept': 'application/json' } }).catch(() => {});
-
     runTransition();
   };
 
