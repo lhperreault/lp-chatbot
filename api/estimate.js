@@ -12,7 +12,11 @@ function setCors(res) {
 const AT_CLIENTS       = "Clients";
 const AT_JOBS          = "Jobs";
 const AT_CONVERSATIONS = "Conversations";
-const SOURCE_CHANNEL   = "Website estimate form";
+// Match chat.js so Airtable single-select options don't reject writes.
+// If you later add a new option like "Website estimate form" to your
+// Source / Channel / Source channel fields, you can split these out.
+const SOURCE_CLIENTS   = "Website";          // Clients.Source
+const SOURCE_CHANNEL   = "Website chatbot";  // Jobs."Source channel" AND Conversations.Channel
 
 function airtableUrl(table) {
   return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
@@ -44,7 +48,7 @@ async function upsertClient(args, knownClientId = null) {
     if (args.phone)     fields["Phone"]     = args.phone;
     if (args.email)     fields["Email"]     = args.email;
     if (args.address)   fields["Address"]   = args.address;
-    fields["Source"] = SOURCE_CHANNEL;
+    fields["Source"] = SOURCE_CLIENTS;
 
     if (existingId) {
       await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
