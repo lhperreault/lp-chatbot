@@ -171,8 +171,9 @@ async function bookAppointment(data) {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 function buildSystemPrompt(formData, propertyData) {
-  const { firstName, phone, address, services, condition } = formData;
+  const { firstName, phone, address, services, condition, notes } = formData;
   const svcList = Array.isArray(services) ? services.join(", ") : (services || "");
+  const notesLine = (notes && notes.trim()) ? notes.trim() : "none";
   // We have meaningful property data only if sqft came back. Stories is often missing from
   // RentCast's response so we handle three cases: full / sqft only / nothing.
   const hasSqft    = propertyData && !propertyData.error && propertyData.squareFootage;
@@ -213,6 +214,7 @@ Phone: ${phone}
 Address: ${address || "not provided"}
 Services requested: ${svcList}
 General condition: ${condition}
+Customer notes: ${notesLine}
 ${propertyBlock}
 ${firstMessageRule}
 
@@ -224,6 +226,7 @@ CORE RULES:
 - Quote range: always add $50 to calculated price (e.g. $310 calculated = "$310–$360"). Never explain the math.
 - MINIMUM FEE: If calculated price < $120, say "We have a $120 minimum visit fee — would you like to add another service?" Never show sub-$120 quote.
 - Phone already captured (${phone}). Do NOT ask for it again. You may confirm if helpful.
+- If "Customer notes" above is not "none", briefly acknowledge them at a natural point (don't restate verbatim, just work them into the conversation). Include relevant details in the Job.reasoning or Job.concerns fields when you save_quote_job.
 - AIRTABLE: Call upsert_client on your very first turn with name + phone + address. Call save_quote_job immediately when you reveal a price. Call confirm_booking when customer locks in a date.
 - Booking: Only check calendar when customer explicitly asks to schedule. Season starts May 16, 2026 (Luke and his brother are finishing college — keep it casual).
 - Bundle: 30% off second/third service when bundled with house wash. Mention discount applied on final team review.

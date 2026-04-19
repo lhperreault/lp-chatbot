@@ -193,6 +193,8 @@
 }
 #lpWrap .lp-input::placeholder { color: #c0c4cc; }
 #lpWrap .lp-input:focus { border-color: #3b82f6; background: #fff; }
+#lpWrap textarea.lp-input { resize: none; line-height: 1.45; min-height: 66px; font-family: inherit; }
+#lpWrap .lp-optional { text-transform: none; color: #c0c4cc !important; -webkit-text-fill-color: #c0c4cc !important; font-weight: 400; letter-spacing: 0; margin-left: 6px; }
 
 /* ── Buttons ── */
 #lpWrap .lp-btns {
@@ -580,6 +582,7 @@
         <div class="lp-field"><label>First name</label><input class="lp-input" id="iName" type="text" placeholder="John" autocomplete="given-name" form="__lp_isolated__"></div>
         <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="text" inputmode="tel" placeholder="(555) 000-0000" autocomplete="tel" form="__lp_isolated__"></div>
         <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="123 Main St, Doylestown, PA" autocomplete="street-address" form="__lp_isolated__"></div>
+        <div class="lp-field"><label>Anything else?<span class="lp-optional">Optional</span></label><textarea class="lp-input" id="iNotes" rows="2" placeholder="Gate code, pets, access, special requests…" form="__lp_isolated__"></textarea></div>
         <span class="lp-err" id="e3">Please fill in your name and phone number.</span>
         <div class="lp-btns">
           <button type="button" class="lp-secondary" onclick="lpBack(3)">Back</button>
@@ -646,7 +649,7 @@
   const STATE_KEY    = 'lp_estimate_state_v1';
   const STATE_TTL_MS = 30 * 60 * 1000; // 30 min
 
-  const fd = { services: [], condition: '', firstName: '', phone: '', address: '' };
+  const fd = { services: [], condition: '', firstName: '', phone: '', address: '', notes: '' };
   const prog = { 1: 33, 2: 66, 3: 100 };
   const history = [];
   let clientId = null, jobId = null, sending = false;
@@ -678,6 +681,7 @@
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); }
     });
   });
+  // iNotes is a textarea — allow Enter for new lines, but block Ctrl/Cmd+Enter submit.
 
   // ── State persistence ─────────────────────────────────────────────────────
   // If the page reloads or Elementor re-renders the widget, we restore the
@@ -750,6 +754,7 @@
     hideErr('e3');
     fd.firstName = n; fd.phone = p;
     fd.address = document.getElementById('iAddr').value.trim();
+    fd.notes   = (document.getElementById('iNotes')?.value || '').trim();
     currentPhase = 'transition';
     saveState();
 
@@ -895,7 +900,7 @@
     if (text) text.style.display = 'none';
 
     clearState();
-    fd.services = []; fd.condition = ''; fd.firstName = ''; fd.phone = ''; fd.address = '';
+    fd.services = []; fd.condition = ''; fd.firstName = ''; fd.phone = ''; fd.address = ''; fd.notes = '';
     history.length = 0;
     clientId = null; jobId = null; sending = false; pendingFirstResponse = null;
     currentStep = 1; currentPhase = 'form';
@@ -904,7 +909,8 @@
     const n  = document.getElementById('iName');
     const p  = document.getElementById('iPhone');
     const a  = document.getElementById('iAddr');
-    if (n) n.value = ''; if (p) p.value = ''; if (a) a.value = '';
+    const nt = document.getElementById('iNotes');
+    if (n) n.value = ''; if (p) p.value = ''; if (a) a.value = ''; if (nt) nt.value = '';
     ['e1','e2','e3'].forEach(hideErr);
 
     const formEl = document.getElementById('lpForm');
@@ -956,9 +962,11 @@
     const nameEl  = document.getElementById('iName');
     const phoneEl = document.getElementById('iPhone');
     const addrEl  = document.getElementById('iAddr');
+    const notesEl = document.getElementById('iNotes');
     if (nameEl)  nameEl.value  = fd.firstName || '';
     if (phoneEl) phoneEl.value = fd.phone     || '';
     if (addrEl)  addrEl.value  = fd.address   || '';
+    if (notesEl) notesEl.value = fd.notes     || '';
 
     if (currentPhase === 'chat') {
       document.getElementById('lpForm').style.display = 'none';
