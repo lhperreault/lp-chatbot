@@ -166,9 +166,30 @@ async function bookAppointment(data) {
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
-function buildSystemPrompt(formData) {
+function buildSystemPrompt(formData, propertyData) {
   const { firstName, phone, address, services, condition } = formData;
   const svcList = Array.isArray(services) ? services.join(", ") : (services || "");
+  const hasProperty = propertyData && !propertyData.error;
+
+  const propertyBlock = hasProperty
+    ? `\nPROPERTY DETAILS (already pulled from public records for this address — USE THESE, do not ask for them):
+- Square footage: ${propertyData.squareFootage || "unknown"}
+- Stories: ${propertyData.stories || "unknown"}
+- Bedrooms: ${propertyData.bedrooms || "unknown"}
+- Bathrooms: ${propertyData.bathrooms || "unknown"}
+- Year built: ${propertyData.yearBuilt || "unknown"}
+- Property type: ${propertyData.propertyType || "unknown"}
+`
+    : "";
+
+  const firstMessageRule = hasProperty
+    ? `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
+Exactly this template, filled with the values from PROPERTY DETAILS above:
+"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage || "?"} sq ft and ${propertyData.stories || "?"} stories. Does that sound right?"
+Do NOT ask the customer to share their address. Do NOT call lookup_property. Do NOT greet differently. Wait for their reply before moving on. If they correct the numbers, use their correction.`
+    : `YOUR FIRST MESSAGE:
+Greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they selected in one sentence, then immediately ask the first qualification question for their first service. No long preamble.`;
+
   return `You are the LP Pressure Wash AI Estimator on the website estimate form.
 
 CUSTOMER CONTEXT — already collected. Do NOT ask for these again:
@@ -177,10 +198,8 @@ Phone: ${phone}
 Address: ${address || "not provided"}
 Services requested: ${svcList}
 General condition: ${condition}
-
-YOUR FIRST MESSAGE:
-- If their first service is "House Exterior" AND address is provided, FIRST silently call the lookup_property tool with the address (no text to the customer yet). Then in your first visible message, follow the HOUSE EXTERIOR step 1 template below using the tool result.
-- Otherwise, greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they selected in one sentence, then immediately ask the first qualification question for their first service. No long preamble.
+${propertyBlock}
+${firstMessageRule}
 
 CORE RULES:
 - ONE question per message. Never stack questions.
@@ -201,11 +220,7 @@ CORE RULES:
 QUALIFICATION FLOWS — one question at a time:
 
 HOUSE EXTERIOR 🏠:
-0. CRITICAL: You already have the customer's address in CUSTOMER CONTEXT above. On your VERY FIRST turn, BEFORE writing anything to the customer, call the lookup_property tool with that address. Do this silently as a tool call — no intro message first. Wait for the tool response, then write your first customer-facing message based on it.
-1. Once lookup_property returns:
-   - If it returned sqft + stories: "Hey [firstName]! 👋 I pulled up your property — looks like about [X] sq ft and [Y] stories. Does that sound right?" Wait for confirmation.
-   - If lookup failed/returned no data: "Hey [firstName]! 👋 Thanks for the details. Quick question — how many stories is your home, and roughly the square footage?"
-   - If they correct the numbers, use their correction for pricing.
+1. Confirm sqft + stories using PROPERTY DETAILS above (your first message already does this). Wait for customer reply. If they correct the numbers, trust the correction.
 2. Primary siding material? (Vinyl, Wood, Brick, Stucco, etc.)
 3. Any dormers, porch, or chimney to clean?
 4. How long since last cleaning, and how dirty would you say it is?
@@ -287,19 +302,41 @@ export default async function handler(req, res) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   let clientId = incomingClientId, jobId = incomingJobId, quoteJustSent = false;
   const latestUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || null;
+  const isFirstTurn = messages.length === 0;
 
-  // Capture the lead in Airtable on the very first turn, before the AI call.
-  // Guarantees an Airtable row (and the new-lead email) even if OpenAI fails.
-  if (!clientId && formData.firstName && formData.phone) {
-    const r = await upsertClient({
-      firstName: formData.firstName,
-      phone:     formData.phone,
-      address:   formData.address,
-    });
-    if (r.clientId) clientId = r.clientId;
+  console.log("[estimate] request", {
+    isFirstTurn,
+    firstName: formData.firstName,
+    services:  formData.services,
+    hasAddr:   !!formData.address,
+    incomingClientId,
+  });
+
+  // On the first turn, run lead upsert + property lookup in parallel so we
+  // don't stack their latencies in front of the OpenAI call.
+  let propertyData = null;
+  if (isFirstTurn) {
+    const needsLead = !clientId && formData.firstName && formData.phone;
+    const needsProperty = formData.address
+      && Array.isArray(formData.services)
+      && formData.services.some(s => /house/i.test(s));
+
+    const [leadRes, propRes] = await Promise.all([
+      needsLead
+        ? upsertClient({ firstName: formData.firstName, phone: formData.phone, address: formData.address })
+        : Promise.resolve(null),
+      needsProperty
+        ? lookupProperty(formData.address)
+        : Promise.resolve(null),
+    ]);
+
+    if (leadRes?.clientId) clientId = leadRes.clientId;
+    if (leadRes?.error)    console.log("[estimate] upsertClient error:", leadRes.error);
+    propertyData = propRes;
+    console.log("[estimate] property lookup result:", propRes);
   }
 
-  const systemPrompt = buildSystemPrompt(formData);
+  const systemPrompt = buildSystemPrompt(formData, propertyData);
 
   try {
     let response = await openai.chat.completions.create({ model: "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: systemPrompt }, ...messages], tools, tool_choice: "auto" });
