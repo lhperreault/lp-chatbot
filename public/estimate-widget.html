@@ -1,0 +1,752 @@
+<!-- LP Pressure Wash — Estimate Widget -->
+<!-- Paste into Elementor HTML block. Update ESTIMATE_URL + FORMSPREE_URL below. -->
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+/* ── Scoped reset (zero specificity via :where) ── */
+:where(#lpWrap, #lpWrap *, #lpWrap *::before, #lpWrap *::after) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  text-shadow: none;
+  filter: none;
+}
+
+#lpWrap {
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  width: 100% !important;
+  max-width: 600px !important;
+  margin: 0 auto !important;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+/* ── Shared card shell ── */
+#lpWrap .lp-box {
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.09);
+  overflow: hidden;
+}
+#lpWrap #lpForm { transition: opacity .35s ease, transform .35s ease; }
+#lpWrap #lpForm.hide { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+
+/* ── Progress strip ── */
+#lpWrap .lp-prog {
+  background: #f8f9fb;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 14px 24px 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+#lpWrap .lp-prog-track {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 3px;
+  background: #e8eaed;
+  border-radius: 999px;
+  overflow: hidden;
+}
+#lpWrap .lp-prog-fill {
+  height: 100%;
+  width: 33%;
+  background: #3b82f6;
+  border-radius: 999px;
+  transition: width .4s cubic-bezier(.4, 0, .2, 1);
+}
+#lpWrap .lp-prog-label {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ── Inner ── */
+#lpWrap .lp-inner { padding: 28px 24px 22px; }
+#lpWrap .lp-step { display: none; }
+#lpWrap .lp-step.active { display: block; animation: lpIn .28s ease both; }
+@keyframes lpIn {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+#lpWrap .lp-eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  color: #3b82f6 !important;
+  -webkit-text-fill-color: #3b82f6 !important;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+#lpWrap .lp-q {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+  line-height: 1.25;
+  margin-bottom: 6px;
+}
+#lpWrap .lp-sub {
+  font-size: 13px;
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+  margin-bottom: 20px;
+}
+
+/* ── Pickers (service / condition) ── */
+#lpWrap .lp-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+#lpWrap .lp-cards.c3 { grid-template-columns: 1fr 1fr 1fr; }
+
+#lpWrap .lp-pick {
+  all: unset;
+  display: block;
+  background: #fff !important;
+  border: 1.5px solid #e8eaed !important;
+  border-radius: 11px;
+  padding: 13px 12px 11px;
+  cursor: pointer;
+  position: relative;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: #1f2937 !important;
+  -webkit-text-fill-color: #1f2937 !important;
+  box-sizing: border-box;
+  transition: border-color .18s ease, background-color .18s ease;
+}
+#lpWrap .lp-pick:hover { border-color: #93c5fd !important; background: #f0f7ff !important; }
+#lpWrap .lp-pick.sel {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+#lpWrap .lp-pick.sel::after {
+  content: '';
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 16px; height: 16px;
+  background-color: #3b82f6;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6l3 3 5-5' stroke='white' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  border-radius: 50%;
+}
+#lpWrap .lp-pick-ic {
+  display: block;
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 4px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
+#lpWrap .lp-pick-t {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937 !important;
+  -webkit-text-fill-color: #1f2937 !important;
+}
+#lpWrap .lp-pick-d {
+  display: block;
+  font-size: 11px;
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+/* ── Inputs ── */
+#lpWrap .lp-field { margin-bottom: 11px; }
+#lpWrap .lp-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+#lpWrap .lp-input {
+  display: block;
+  width: 100%;
+  background: #f9fafb;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 9px;
+  padding: 11px 14px;
+  font-size: 14px;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+  font-family: inherit;
+  font-weight: 400;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color .2s, background .2s;
+}
+#lpWrap .lp-input::placeholder { color: #c0c4cc; }
+#lpWrap .lp-input:focus { border-color: #3b82f6; background: #fff; }
+
+/* ── Buttons ── */
+#lpWrap .lp-btns {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+#lpWrap .lp-primary {
+  all: unset;
+  background: #3b82f6;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  border-radius: 9px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: background .18s;
+}
+#lpWrap .lp-primary:hover { background: #2563eb; }
+#lpWrap .lp-secondary {
+  all: unset;
+  background: transparent;
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 9px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: color .18s, border-color .18s;
+}
+#lpWrap .lp-secondary:hover {
+  color: #4b5563 !important;
+  -webkit-text-fill-color: #4b5563 !important;
+  border-color: #d1d5db;
+}
+#lpWrap .lp-err {
+  display: none;
+  font-size: 11px;
+  color: #ef4444 !important;
+  -webkit-text-fill-color: #ef4444 !important;
+  margin-top: 6px;
+}
+
+/* ── Trust row ── */
+#lpWrap .lp-trust {
+  background: #f8f9fb;
+  border-top: 1px solid #f0f0f0;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 18px;
+  flex-wrap: wrap;
+}
+#lpWrap .lp-trust-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+  white-space: nowrap;
+}
+#lpWrap .lp-trust-dot {
+  width: 5px; height: 5px;
+  background: #3b82f6;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Transition screen ── */
+#lpWrap #lpTransition {
+  display: none;
+  text-align: center;
+  padding: 70px 24px;
+  min-height: 320px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+#lpWrap #lpTransition.active { display: flex; }
+#lpWrap .t-line {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .45s ease, transform .45s ease;
+}
+#lpWrap .t-line.show { opacity: 1; transform: translateY(0); }
+#lpWrap .t-line.t-sub {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  font-weight: 400;
+}
+
+/* ── Chat ── */
+#lpWrap #lpChat {
+  display: none;
+  flex-direction: column;
+  height: clamp(440px, 70vh, 600px);
+}
+#lpWrap #lpChat.active { display: flex; }
+
+#lpWrap .chat-hdr {
+  padding: 14px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+#lpWrap .chat-avatar {
+  width: 36px; height: 36px;
+  background: #eff6ff;
+  border-radius: 50%;
+  border: 1.5px solid #bfdbfe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+#lpWrap .chat-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+}
+#lpWrap .chat-status {
+  font-size: 11px;
+  color: #3b82f6 !important;
+  -webkit-text-fill-color: #3b82f6 !important;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+}
+#lpWrap .status-dot {
+  width: 6px; height: 6px;
+  background: #22c55e;
+  border-radius: 50%;
+}
+
+#lpWrap .chat-msgs {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 18px 16px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  scroll-behavior: smooth;
+}
+#lpWrap .chat-msgs::-webkit-scrollbar { width: 4px; }
+#lpWrap .chat-msgs::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 99px; }
+
+#lpWrap .msg { display: flex; flex-direction: column; max-width: 84%; }
+#lpWrap .msg.bot { align-self: flex-start; }
+#lpWrap .msg.usr { align-self: flex-end; }
+#lpWrap .bubble {
+  padding: 11px 15px;
+  border-radius: 16px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#lpWrap .msg.bot .bubble {
+  background: #f3f4f6 !important;
+  color: #1f2937 !important;
+  -webkit-text-fill-color: #1f2937 !important;
+  border-bottom-left-radius: 4px;
+}
+#lpWrap .msg.usr .bubble {
+  background: #3b82f6 !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  border-bottom-right-radius: 4px;
+}
+#lpWrap .msg-time {
+  font-size: 10px;
+  color: #c0c4cc !important;
+  -webkit-text-fill-color: #c0c4cc !important;
+  margin-top: 3px;
+  padding: 0 4px;
+}
+#lpWrap .msg.usr .msg-time { text-align: right; }
+
+#lpWrap .typing {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 11px 15px;
+  background: #f3f4f6;
+  border-radius: 16px;
+  border-bottom-left-radius: 4px;
+  width: fit-content;
+  align-self: flex-start;
+}
+#lpWrap .typing.show { display: flex; }
+#lpWrap .t-dot {
+  width: 6px; height: 6px;
+  background: #9ca3af;
+  border-radius: 50%;
+  animation: tBounce 1.2s infinite;
+}
+#lpWrap .t-dot:nth-child(2) { animation-delay: .2s; }
+#lpWrap .t-dot:nth-child(3) { animation-delay: .4s; }
+@keyframes tBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-5px); }
+}
+
+#lpWrap .chat-input-row {
+  border-top: 1px solid #f0f0f0;
+  padding: 12px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+#lpWrap .chat-inp {
+  flex: 1 1 auto;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  background: #f9fafb;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 22px;
+  padding: 11px 16px;
+  font-size: 13.5px;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+  font-family: inherit;
+  font-weight: 400;
+  line-height: 1.4;
+  min-height: 22px;
+  max-height: 120px;
+  resize: none;
+  overflow-y: auto;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color .2s, background .2s;
+}
+#lpWrap .chat-inp::placeholder { color: #c0c4cc; }
+#lpWrap .chat-inp:focus { border-color: #3b82f6; background: #fff; }
+#lpWrap .send-btn {
+  all: unset;
+  flex: 0 0 auto;
+  width: 40px; height: 40px;
+  background: #3b82f6;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .18s;
+}
+#lpWrap .send-btn:hover { background: #2563eb; }
+#lpWrap .send-btn[disabled] { background: #c7d2fe; cursor: not-allowed; }
+#lpWrap .chat-foot {
+  padding: 6px;
+  text-align: center;
+  font-size: 10px;
+  color: #d1d5db !important;
+  -webkit-text-fill-color: #d1d5db !important;
+  border-top: 1px solid #f5f5f5;
+}
+
+/* ── Mobile ── */
+@media (max-width: 420px) {
+  #lpWrap .lp-cards.c3 { grid-template-columns: 1fr; }
+  #lpWrap .lp-inner { padding: 24px 18px 20px; }
+  #lpWrap .lp-prog { padding-left: 18px; padding-right: 18px; }
+  #lpWrap .lp-trust { padding-left: 14px; padding-right: 14px; gap: 6px 12px; }
+  #lpWrap .lp-trust-item { font-size: 10.5px; }
+}
+</style>
+
+<div id="lpWrap">
+
+  <!-- ── FORM ── -->
+  <div id="lpForm" class="lp-box">
+    <div class="lp-prog">
+      <div class="lp-prog-track"><div class="lp-prog-fill" id="lpFill"></div></div>
+      <span class="lp-prog-label" id="lpLabel">1 / 3</span>
+    </div>
+
+    <div class="lp-inner">
+
+      <!-- Step 1 -->
+      <div class="lp-step active" id="lpS1">
+        <div class="lp-eyebrow">Free Estimate</div>
+        <h2 class="lp-q">What needs to be cleaned?</h2>
+        <p class="lp-sub">Select everything that applies.</p>
+        <div class="lp-cards">
+          <button type="button" class="lp-pick" data-val="Driveway" onclick="lpToggle(this)">
+            <span class="lp-pick-ic">🚗</span><span class="lp-pick-t">Driveway</span><span class="lp-pick-d">Algae &amp; mildew</span>
+          </button>
+          <button type="button" class="lp-pick" data-val="House Exterior" onclick="lpToggle(this)">
+            <span class="lp-pick-ic">🏠</span><span class="lp-pick-t">House Exterior</span><span class="lp-pick-d">Siding, brick, stucco</span>
+          </button>
+          <button type="button" class="lp-pick" data-val="Deck" onclick="lpToggle(this)">
+            <span class="lp-pick-ic">🪵</span><span class="lp-pick-t">Deck</span><span class="lp-pick-d">Wood or composite</span>
+          </button>
+          <button type="button" class="lp-pick" data-val="Patio" onclick="lpToggle(this)">
+            <span class="lp-pick-ic">🧱</span><span class="lp-pick-t">Patio</span><span class="lp-pick-d">Concrete or pavers</span>
+          </button>
+          <button type="button" class="lp-pick" data-val="Fence" onclick="lpToggle(this)">
+            <span class="lp-pick-ic">🌿</span><span class="lp-pick-t">Fence</span><span class="lp-pick-d">Vinyl or wood</span>
+          </button>
+          <button type="button" class="lp-pick" data-val="Gutters" onclick="lpToggle(this)">
+            <span class="lp-pick-ic">🌧️</span><span class="lp-pick-t">Gutters</span><span class="lp-pick-d">Clean &amp; flush</span>
+          </button>
+        </div>
+        <span class="lp-err" id="e1">Please select at least one service.</span>
+        <div class="lp-btns"><button type="button" class="lp-primary" onclick="lpNext(1)">Continue →</button></div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="lp-step" id="lpS2">
+        <div class="lp-eyebrow">Almost there</div>
+        <h2 class="lp-q">How's the condition?</h2>
+        <p class="lp-sub">Helps us give you an accurate range.</p>
+        <div class="lp-cards c3">
+          <button type="button" class="lp-pick" data-grp="cond" data-val="Light" onclick="lpPick(this,'cond')">
+            <span class="lp-pick-ic">✨</span><span class="lp-pick-t">Light</span><span class="lp-pick-d">Dusty or faded</span>
+          </button>
+          <button type="button" class="lp-pick" data-grp="cond" data-val="Moderate" onclick="lpPick(this,'cond')">
+            <span class="lp-pick-ic">🟡</span><span class="lp-pick-t">Moderate</span><span class="lp-pick-d">Visible buildup</span>
+          </button>
+          <button type="button" class="lp-pick" data-grp="cond" data-val="Heavy" onclick="lpPick(this,'cond')">
+            <span class="lp-pick-ic">🔴</span><span class="lp-pick-t">Heavy</span><span class="lp-pick-d">Long overdue</span>
+          </button>
+        </div>
+        <span class="lp-err" id="e2">Please select a condition.</span>
+        <div class="lp-btns">
+          <button type="button" class="lp-secondary" onclick="lpBack(2)">Back</button>
+          <button type="button" class="lp-primary" onclick="lpNext(2)">Continue →</button>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="lp-step" id="lpS3">
+        <div class="lp-eyebrow">Last step</div>
+        <h2 class="lp-q">Where should we send your estimate?</h2>
+        <p class="lp-sub">We'll reach out within a few hours — no spam, ever.</p>
+        <div class="lp-field"><label>First name</label><input class="lp-input" id="iName" type="text" placeholder="John" autocomplete="given-name"></div>
+        <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="tel" placeholder="(555) 000-0000" autocomplete="tel"></div>
+        <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="123 Main St, Doylestown, PA" autocomplete="street-address"></div>
+        <span class="lp-err" id="e3">Please fill in your name and phone number.</span>
+        <div class="lp-btns">
+          <button type="button" class="lp-secondary" onclick="lpBack(3)">Back</button>
+          <button type="button" class="lp-primary" onclick="lpSubmit()">Get My Estimate →</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="lp-trust">
+      <div class="lp-trust-item"><span class="lp-trust-dot"></span>Free estimates</div>
+      <div class="lp-trust-item"><span class="lp-trust-dot"></span>No obligation</div>
+      <div class="lp-trust-item"><span class="lp-trust-dot"></span>Local &amp; insured</div>
+      <div class="lp-trust-item"><span class="lp-trust-dot"></span>5-star rated</div>
+    </div>
+  </div>
+
+  <!-- ── TRANSITION ── -->
+  <div id="lpTransition">
+    <p class="t-line" id="tl1">Thank you 🙏</p>
+    <p class="t-line t-sub" id="tl2">We received your job details.</p>
+    <p class="t-line t-sub" id="tl3">Just a few quick questions to get your estimate right.</p>
+  </div>
+
+  <!-- ── CHAT ── -->
+  <div id="lpChat" class="lp-box">
+    <div class="chat-hdr">
+      <div class="chat-avatar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="1.8" stroke-linecap="round">
+          <path d="M12 2C6.48 2 2 6.03 2 11c0 2.7 1.2 5.1 3.1 6.8L4 21l3.9-1.2C9.2 20.6 10.6 21 12 21c5.52 0 10-4.03 10-9s-4.48-9-10-9z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="chat-name">LP Pressure Wash — Estimator</div>
+        <div class="chat-status"><span class="status-dot"></span>Online now</div>
+      </div>
+    </div>
+    <div class="chat-msgs" id="chatMsgs">
+      <div class="typing" id="typing"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div>
+    </div>
+    <div class="chat-input-row">
+      <textarea class="chat-inp" id="chatInp" rows="1" placeholder="Type your reply…" onkeydown="lpKey(event)" oninput="lpGrow(this)"></textarea>
+      <button type="button" class="send-btn" id="sendBtn" onclick="lpSend()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+    <div class="chat-foot">Powered by LP Pressure Wash AI Estimator</div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const ESTIMATE_URL  = 'https://chatbot-t1bk.vercel.app/api/estimate';
+  const FORMSPREE_URL = 'https://formspree.io/f/YOUR_FORMSPREE_ID';
+
+  const fd = { services: [], condition: '', firstName: '', phone: '', address: '' };
+  const prog = { 1: 33, 2: 66, 3: 100 };
+  const history = [];
+  let clientId = null, jobId = null, sending = false;
+
+  function showErr(id) { document.getElementById(id).style.display = 'block'; }
+  function hideErr(id) { document.getElementById(id).style.display = 'none'; }
+
+  function setStep(n) {
+    document.querySelectorAll('#lpForm .lp-step').forEach(s => s.classList.remove('active'));
+    document.getElementById('lpS' + n).classList.add('active');
+    document.getElementById('lpFill').style.width = prog[n] + '%';
+    document.getElementById('lpLabel').textContent = n + ' / 3';
+  }
+
+  window.lpNext = function (step) {
+    if (step === 1 && !fd.services.length) return showErr('e1');
+    if (step === 2 && !fd.condition)        return showErr('e2');
+    hideErr('e' + step);
+    setStep(step + 1);
+  };
+  window.lpBack = function (step) { setStep(step - 1); };
+
+  window.lpToggle = function (el) {
+    el.classList.toggle('sel');
+    const v = el.dataset.val, i = fd.services.indexOf(v);
+    i > -1 ? fd.services.splice(i, 1) : fd.services.push(v);
+  };
+  window.lpPick = function (el, grp) {
+    document.querySelectorAll('[data-grp="' + grp + '"]').forEach(c => c.classList.remove('sel'));
+    el.classList.add('sel');
+    if (grp === 'cond') fd.condition = el.dataset.val;
+  };
+
+  window.lpSubmit = function () {
+    const n = document.getElementById('iName').value.trim();
+    const p = document.getElementById('iPhone').value.trim();
+    if (!n || !p) return showErr('e3');
+    hideErr('e3');
+    fd.firstName = n; fd.phone = p;
+    fd.address = document.getElementById('iAddr').value.trim();
+
+    const body = new FormData();
+    body.append('name', fd.firstName);
+    body.append('phone', fd.phone);
+    body.append('address', fd.address);
+    body.append('services', fd.services.join(', '));
+    body.append('condition', fd.condition);
+    fetch(FORMSPREE_URL, { method: 'POST', body, headers: { 'Accept': 'application/json' } }).catch(() => {});
+
+    runTransition();
+  };
+
+  function runTransition() {
+    const form = document.getElementById('lpForm');
+    form.classList.add('hide');
+    setTimeout(() => {
+      form.style.display = 'none';
+      document.getElementById('lpTransition').classList.add('active');
+      ['tl1', 'tl2', 'tl3'].forEach((id, i) => {
+        setTimeout(() => document.getElementById(id).classList.add('show'), i * 650);
+      });
+      setTimeout(showChat, 2100);
+    }, 320);
+  }
+
+  function showChat() {
+    document.getElementById('lpTransition').style.display = 'none';
+    document.getElementById('lpChat').classList.add('active');
+    document.getElementById('typing').classList.add('show');
+    callEstimate('');
+  }
+
+  function addBubble(text, who) {
+    const msgs = document.getElementById('chatMsgs');
+    const typing = document.getElementById('typing');
+    msgs.removeChild(typing);
+    const d = document.createElement('div');
+    d.className = 'msg ' + who;
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    d.innerHTML = '<div class="bubble">' + esc(text) + '</div><div class="msg-time">' + t + '</div>';
+    msgs.appendChild(d);
+    msgs.appendChild(typing);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  window.lpGrow = function (el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  };
+
+  async function callEstimate(userText) {
+    const typing = document.getElementById('typing');
+    typing.classList.add('show');
+    document.getElementById('chatMsgs').scrollTop = 1e9;
+    if (userText) history.push({ role: 'user', content: userText });
+    try {
+      const res = await fetch(ESTIMATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history, formData: fd, clientId, jobId })
+      });
+      const data = await res.json();
+      typing.classList.remove('show');
+      if (data.reply) { history.push({ role: 'assistant', content: data.reply }); addBubble(data.reply, 'bot'); }
+      if (data.clientId) clientId = data.clientId;
+      if (data.jobId)    jobId    = data.jobId;
+    } catch (err) {
+      typing.classList.remove('show');
+      addBubble("Sorry, something went wrong. Reach us directly at (267) 912-8285 📱", 'bot');
+      console.error(err);
+    }
+  }
+
+  window.lpSend = async function () {
+    if (sending) return;
+    const inp = document.getElementById('chatInp');
+    const btn = document.getElementById('sendBtn');
+    const text = inp.value.trim();
+    if (!text) return;
+    sending = true; btn.disabled = true;
+    inp.value = ''; window.lpGrow(inp);
+    addBubble(text, 'usr');
+    await callEstimate(text);
+    sending = false; btn.disabled = false;
+    inp.focus();
+  };
+
+  window.lpKey = function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.lpSend(); }
+  };
+})();
+</script>
