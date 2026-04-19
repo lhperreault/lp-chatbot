@@ -264,18 +264,39 @@ export default async function handler(req, res) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   let clientId = incomingClientId, jobId = incomingJobId, quoteJustSent = false;
   const latestUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || null;
-  const systemPrompt = buildSystemPrompt(formData);
+  const isFirstTurn = messages.length === 0;
 
-  // Capture the lead in Airtable on the very first turn, before the AI call.
-  // Guarantees an Airtable row (and triggers your new-lead email) even if OpenAI fails.
-  if (!clientId && formData.firstName && formData.phone) {
-    const r = await upsertClient({
-      firstName: formData.firstName,
-      phone:     formData.phone,
-      address:   formData.address,
-    });
-    if (r.clientId) clientId = r.clientId;
+  // On the first turn: upsert the lead to Airtable AND (if relevant) prefetch property
+  // details. Running both in parallel so we don't stack their latencies onto the AI call.
+  let propertyContext = "";
+  if (isFirstTurn) {
+    const needsLead = !clientId && formData.firstName && formData.phone;
+    const needsProperty = formData.address
+      && Array.isArray(formData.services)
+      && formData.services.some(s => /house/i.test(s));
+
+    const [leadRes, propRes] = await Promise.all([
+      needsLead
+        ? upsertClient({ firstName: formData.firstName, phone: formData.phone, address: formData.address })
+        : Promise.resolve(null),
+      needsProperty
+        ? lookupProperty(formData.address)
+        : Promise.resolve(null),
+    ]);
+
+    if (leadRes?.clientId) clientId = leadRes.clientId;
+    if (propRes && !propRes.error) {
+      propertyContext = `\n\nPROPERTY DETAILS (already looked up from public records — use these, do not ask):
+- Square footage: ${propRes.squareFootage || "unknown"}
+- Stories: ${propRes.stories || "unknown"}
+- Year built: ${propRes.yearBuilt || "unknown"}
+- Property type: ${propRes.propertyType || "unknown"}
+
+When they chose house exterior, skip the "address vs manual" question, briefly confirm what you pulled, then move to the next qualification question (siding material).`;
+    }
   }
+
+  const systemPrompt = buildSystemPrompt(formData) + propertyContext;
 
   try {
     let response = await openai.chat.completions.create({ model: "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: systemPrompt }, ...messages], tools, tool_choice: "auto" });

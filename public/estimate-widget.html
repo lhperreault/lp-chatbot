@@ -620,6 +620,7 @@
   const prog = { 1: 33, 2: 66, 3: 100 };
   const history = [];
   let clientId = null, jobId = null, sending = false;
+  let pendingFirstResponse = null;
 
   function showErr(id) { document.getElementById(id).style.display = 'block'; }
   function hideErr(id) { document.getElementById(id).style.display = 'none'; }
@@ -657,6 +658,15 @@
     hideErr('e3');
     fd.firstName = n; fd.phone = p;
     fd.address = document.getElementById('iAddr').value.trim();
+
+    // Fire the first AI call in parallel with the transition screen.
+    // By the time the chat opens, the response is usually already back.
+    pendingFirstResponse = fetch(ESTIMATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [], formData: fd, clientId: null, jobId: null })
+    }).then(r => r.json()).catch(err => ({ error: err.message }));
+
     runTransition();
   };
 
@@ -676,8 +686,24 @@
   function showChat() {
     document.getElementById('lpTransition').style.display = 'none';
     document.getElementById('lpChat').classList.add('active');
-    document.getElementById('typing').classList.add('show');
-    callEstimate('');
+    const typing = document.getElementById('typing');
+    typing.classList.add('show');
+
+    if (pendingFirstResponse) {
+      pendingFirstResponse.then(data => {
+        typing.classList.remove('show');
+        if (data.error) {
+          addBubble("Sorry, something went wrong. Reach us directly at (267) 912-8285 📱", 'bot');
+          return;
+        }
+        if (data.reply) { history.push({ role: 'assistant', content: data.reply }); addBubble(data.reply, 'bot'); }
+        if (data.clientId) clientId = data.clientId;
+        if (data.jobId)    jobId    = data.jobId;
+      });
+      pendingFirstResponse = null;
+    } else {
+      callEstimate('');
+    }
   }
 
   function addBubble(text, who) {
