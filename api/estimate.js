@@ -173,13 +173,15 @@ async function bookAppointment(data) {
 function buildSystemPrompt(formData, propertyData) {
   const { firstName, phone, address, services, condition } = formData;
   const svcList = Array.isArray(services) ? services.join(", ") : (services || "");
-  // Only treat it as "have property data" if we actually got the critical fields.
-  const hasProperty = propertyData && !propertyData.error && propertyData.squareFootage;
+  // We have meaningful property data only if sqft came back. Stories is often missing from
+  // RentCast's response so we handle three cases: full / sqft only / nothing.
+  const hasSqft    = propertyData && !propertyData.error && propertyData.squareFootage;
+  const hasStories = hasSqft && propertyData.stories;
 
-  const propertyBlock = hasProperty
-    ? `\nPROPERTY DETAILS (already pulled from public records for this address — USE THESE, do not ask for them):
-- Square footage: ${propertyData.squareFootage || "unknown"}
-- Stories: ${propertyData.stories || "unknown"}
+  const propertyBlock = hasSqft
+    ? `\nPROPERTY DETAILS (already pulled from public records for this address — USE THESE, do not ask for the ones we already have):
+- Square footage: ${propertyData.squareFootage}
+- Stories: ${propertyData.stories || "unknown — ASK the customer"}
 - Bedrooms: ${propertyData.bedrooms || "unknown"}
 - Bathrooms: ${propertyData.bathrooms || "unknown"}
 - Year built: ${propertyData.yearBuilt || "unknown"}
@@ -187,13 +189,21 @@ function buildSystemPrompt(formData, propertyData) {
 `
     : "";
 
-  const firstMessageRule = hasProperty
-    ? `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
+  let firstMessageRule;
+  if (hasSqft && hasStories) {
+    firstMessageRule = `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
 Exactly this template, filled with the values from PROPERTY DETAILS above:
-"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage || "?"} sq ft and ${propertyData.stories || "?"} stories. Does that sound right?"
-Do NOT ask the customer to share their address. Do NOT call lookup_property. Do NOT greet differently. Wait for their reply before moving on. If they correct the numbers, use their correction.`
-    : `YOUR FIRST MESSAGE:
+"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage} sq ft and ${propertyData.stories} stories. Does that sound right?"
+Do NOT ask for sqft or stories. Do NOT greet differently. Wait for their reply. If they correct the numbers, use their correction.`;
+  } else if (hasSqft) {
+    firstMessageRule = `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
+Exactly this template:
+"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage} sq ft. Quick one — how many stories is it?"
+We only got sqft from public records; stories was missing, so ASK for it here. Do NOT ask for sqft (we have it). Do NOT greet differently.`;
+  } else {
+    firstMessageRule = `YOUR FIRST MESSAGE:
 Greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they selected in one sentence, then immediately ask the first qualification question for their first service. No long preamble.`;
+  }
 
   return `You are the LP Pressure Wash AI Estimator on the website estimate form.
 
