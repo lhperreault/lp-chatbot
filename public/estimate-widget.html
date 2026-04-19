@@ -622,6 +622,25 @@
   let clientId = null, jobId = null, sending = false;
   let pendingFirstResponse = null;
 
+  // Elementor / WordPress sometimes wraps HTML widgets inside an outer <form>.
+  // If the user tabs through our inputs and hits Enter, that outer form
+  // submits and the page reloads — wiping our step and resetting to step 1.
+  // Block any submit that originates from inside our widget.
+  const wrap = document.getElementById('lpWrap');
+  const outerForm = wrap && wrap.closest('form');
+  if (outerForm) {
+    outerForm.addEventListener('submit', function (e) {
+      if (wrap.contains(e.target)) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+  }
+  // Belt-and-suspenders: swallow Enter on our three text inputs.
+  ['iName', 'iPhone', 'iAddr'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); }
+    });
+  });
+
   function showErr(id) { document.getElementById(id).style.display = 'block'; }
   function hideErr(id) { document.getElementById(id).style.display = 'none'; }
 
