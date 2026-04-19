@@ -266,6 +266,17 @@ export default async function handler(req, res) {
   const latestUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || null;
   const systemPrompt = buildSystemPrompt(formData);
 
+  // Capture the lead in Airtable on the very first turn, before the AI call.
+  // Guarantees an Airtable row (and triggers your new-lead email) even if OpenAI fails.
+  if (!clientId && formData.firstName && formData.phone) {
+    const r = await upsertClient({
+      firstName: formData.firstName,
+      phone:     formData.phone,
+      address:   formData.address,
+    });
+    if (r.clientId) clientId = r.clientId;
+  }
+
   try {
     let response = await openai.chat.completions.create({ model: "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: systemPrompt }, ...messages], tools, tool_choice: "auto" });
     let assistantMessage = response.choices[0].message;
