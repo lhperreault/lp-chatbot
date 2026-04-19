@@ -556,9 +556,9 @@
         <div class="lp-eyebrow">Last step</div>
         <h2 class="lp-q">Where should we send your estimate?</h2>
         <p class="lp-sub">We'll reach out within a few hours — no spam, ever.</p>
-        <div class="lp-field"><label>First name</label><input class="lp-input" id="iName" type="text" placeholder="John" autocomplete="given-name"></div>
-        <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="tel" placeholder="(555) 000-0000" autocomplete="tel"></div>
-        <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="123 Main St, Doylestown, PA" autocomplete="street-address"></div>
+        <div class="lp-field"><label>First name</label><input class="lp-input" id="iName" type="text" placeholder="John" autocomplete="given-name" form="__lp_isolated__"></div>
+        <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="text" inputmode="tel" placeholder="(555) 000-0000" autocomplete="tel" form="__lp_isolated__"></div>
+        <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="123 Main St, Doylestown, PA" autocomplete="street-address" form="__lp_isolated__"></div>
         <span class="lp-err" id="e3">Please fill in your name and phone number.</span>
         <div class="lp-btns">
           <button type="button" class="lp-secondary" onclick="lpBack(3)">Back</button>
@@ -655,25 +655,32 @@
   // If the page reloads or Elementor re-renders the widget, we restore the
   // user's progress instead of throwing them back to step 1.
   function saveState() {
-    try {
-      sessionStorage.setItem(STATE_KEY, JSON.stringify({
-        fd, currentStep, currentPhase, history, clientId, jobId, ts: Date.now()
-      }));
-    } catch {}
+    const payload = JSON.stringify({
+      fd, currentStep, currentPhase, history, clientId, jobId, ts: Date.now()
+    });
+    try { sessionStorage.setItem(STATE_KEY, payload); } catch {}
+    try { localStorage.setItem(STATE_KEY, payload); } catch {}
+    try { console.log('[lpWidget] saved state', { step: currentStep, phase: currentPhase, services: fd.services }); } catch {}
   }
   function loadState() {
+    let raw = null;
+    try { raw = sessionStorage.getItem(STATE_KEY); } catch {}
+    if (!raw) { try { raw = localStorage.getItem(STATE_KEY); } catch {} }
+    if (!raw) return null;
     try {
-      const raw = sessionStorage.getItem(STATE_KEY);
-      if (!raw) return null;
       const data = JSON.parse(raw);
       if (!data.ts || Date.now() - data.ts > STATE_TTL_MS) {
-        sessionStorage.removeItem(STATE_KEY);
+        try { sessionStorage.removeItem(STATE_KEY); } catch {}
+        try { localStorage.removeItem(STATE_KEY); } catch {}
         return null;
       }
       return data;
     } catch { return null; }
   }
-  function clearState() { try { sessionStorage.removeItem(STATE_KEY); } catch {} }
+  function clearState() {
+    try { sessionStorage.removeItem(STATE_KEY); } catch {}
+    try { localStorage.removeItem(STATE_KEY); } catch {}
+  }
 
   function showErr(id) { document.getElementById(id).style.display = 'block'; }
   function hideErr(id) { document.getElementById(id).style.display = 'none'; }
@@ -832,6 +839,7 @@
   // ── Restore state on load if we have a recent session ────────────────────
   function restoreFromSaved() {
     const saved = loadState();
+    try { console.log('[lpWidget] restoreFromSaved →', saved ? { step: saved.currentStep, phase: saved.currentPhase, hasName: !!saved.fd?.firstName } : 'no saved state'); } catch {}
     if (!saved) return;
 
     Object.assign(fd, saved.fd || {});
