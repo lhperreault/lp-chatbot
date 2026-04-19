@@ -301,7 +301,8 @@ export default async function handler(req, res) {
 
     if (leadRes?.clientId) clientId = leadRes.clientId;
     if (propRes && !propRes.error) {
-      propertyContext = `\n\nPROPERTY DETAILS (already looked up from public records — use these, do not ask):
+      propertyContext = `\n\n=========================================
+PROPERTY DETAILS (pulled from public records — do NOT ask for these):
 - Square footage: ${propRes.squareFootage || "unknown"}
 - Stories: ${propRes.stories || "unknown"}
 - Bedrooms: ${propRes.bedrooms || "unknown"}
@@ -310,7 +311,15 @@ export default async function handler(req, res) {
 - Property type: ${propRes.propertyType || "unknown"}
 - Lot size: ${propRes.lotSize || "unknown"}
 
-When they chose house exterior, skip the "address vs manual" question, briefly confirm sqft + stories with them ("I can see your place is about X sq ft and Y stories — does that sound right?"), then move to the next qualification question (siding material).`;
+CRITICAL FIRST-MESSAGE RULE (override the generic first-message rule above):
+Because this customer chose house exterior AND we have property data, your FIRST message MUST follow this exact template:
+
+"Hey ${formData.firstName}! 👋 I pulled up your property — looks like about ${propRes.squareFootage || "?"} sq ft and ${propRes.stories || "?"} stories. Does that sound right?"
+
+Do NOT ask about sqft/stories in any other way. Do NOT skip this confirmation. Wait for their reply before moving on. Once they confirm (or correct), proceed to ask about siding material.
+
+If they correct the numbers, use their correction for pricing.
+=========================================`;
     }
   }
 

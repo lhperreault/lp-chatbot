@@ -531,20 +531,20 @@
       <!-- Step 2 -->
       <div class="lp-step" id="lpS2">
         <div class="lp-eyebrow">Almost there</div>
-        <h2 class="lp-q">How's the condition?</h2>
+        <h2 class="lp-q">When was the last time it was cleaned?</h2>
         <p class="lp-sub">Helps us give you an accurate range.</p>
         <div class="lp-cards c3">
-          <button type="button" class="lp-pick" data-grp="cond" data-val="Light" onclick="lpPick(this,'cond')">
-            <span class="lp-pick-ic">✨</span><span class="lp-pick-t">Light</span><span class="lp-pick-d">Dusty or faded</span>
+          <button type="button" class="lp-pick" data-grp="cond" data-val="Cleaned within the last 3 years" onclick="lpPick(this,'cond')">
+            <span class="lp-pick-ic">🌱</span><span class="lp-pick-t">Within 3 years</span><span class="lp-pick-d">Fairly recent</span>
           </button>
-          <button type="button" class="lp-pick" data-grp="cond" data-val="Moderate" onclick="lpPick(this,'cond')">
-            <span class="lp-pick-ic">🟡</span><span class="lp-pick-t">Moderate</span><span class="lp-pick-d">Visible buildup</span>
+          <button type="button" class="lp-pick" data-grp="cond" data-val="Not cleaned in 3+ years" onclick="lpPick(this,'cond')">
+            <span class="lp-pick-ic">🟡</span><span class="lp-pick-t">3+ years ago</span><span class="lp-pick-d">Been a while</span>
           </button>
-          <button type="button" class="lp-pick" data-grp="cond" data-val="Heavy" onclick="lpPick(this,'cond')">
-            <span class="lp-pick-ic">🔴</span><span class="lp-pick-t">Heavy</span><span class="lp-pick-d">Long overdue</span>
+          <button type="button" class="lp-pick" data-grp="cond" data-val="Never cleaned or can't remember" onclick="lpPick(this,'cond')">
+            <span class="lp-pick-ic">🔴</span><span class="lp-pick-t">Never / can't recall</span><span class="lp-pick-d">Long overdue</span>
           </button>
         </div>
-        <span class="lp-err" id="e2">Please select a condition.</span>
+        <span class="lp-err" id="e2">Please pick one.</span>
         <div class="lp-btns">
           <button type="button" class="lp-secondary" onclick="lpBack(2)">Back</button>
           <button type="button" class="lp-primary" onclick="lpNext(2)">Continue →</button>
