@@ -107,12 +107,27 @@ async function logConversation({ clientId, jobId, direction, author, message, in
 async function lookupProperty(address) {
   try {
     if (!process.env.RENTCAST_API_KEY) return { error: "Property lookup not configured" };
-    const res  = await fetch(`https://api.rentcast.io/v1/properties?address=${encodeURIComponent(address)}`, { headers: { "X-Api-Key": process.env.RENTCAST_API_KEY } });
+    const res = await fetch(
+      `https://api.rentcast.io/v1/properties?address=${encodeURIComponent(address)}`,
+      { headers: { "X-Api-Key": process.env.RENTCAST_API_KEY } }
+    );
     const data = await res.json();
     const prop = Array.isArray(data) ? data[0] : data;
-    if (!prop || prop.statusCode) return { error: "Property not found. Ask manually." };
-    return { squareFootage: prop.squareFootage || null, stories: prop.stories || null, yearBuilt: prop.yearBuilt || null, propertyType: prop.propertyType || null, address: prop.formattedAddress || address };
-  } catch { return { error: "Lookup failed. Ask manually." }; }
+    if (!prop || prop.statusCode) return { error: "Property not found. Ask the customer for details manually." };
+    return {
+      squareFootage: prop.squareFootage || null,
+      stories:       prop.stories       || null,
+      bedrooms:      prop.bedrooms      || null,
+      bathrooms:     prop.bathrooms     || null,
+      yearBuilt:     prop.yearBuilt     || null,
+      propertyType:  prop.propertyType  || null,
+      lotSize:       prop.lotSize       || null,
+      address:       prop.formattedAddress || address,
+    };
+  } catch (err) {
+    console.error("Property lookup error:", err);
+    return { error: "Lookup failed. Ask the customer for details manually." };
+  }
 }
 
 async function checkCalendarAvailability(weeksAhead = 4) {
@@ -289,10 +304,13 @@ export default async function handler(req, res) {
       propertyContext = `\n\nPROPERTY DETAILS (already looked up from public records — use these, do not ask):
 - Square footage: ${propRes.squareFootage || "unknown"}
 - Stories: ${propRes.stories || "unknown"}
+- Bedrooms: ${propRes.bedrooms || "unknown"}
+- Bathrooms: ${propRes.bathrooms || "unknown"}
 - Year built: ${propRes.yearBuilt || "unknown"}
 - Property type: ${propRes.propertyType || "unknown"}
+- Lot size: ${propRes.lotSize || "unknown"}
 
-When they chose house exterior, skip the "address vs manual" question, briefly confirm what you pulled, then move to the next qualification question (siding material).`;
+When they chose house exterior, skip the "address vs manual" question, briefly confirm sqft + stories with them ("I can see your place is about X sq ft and Y stories — does that sound right?"), then move to the next qualification question (siding material).`;
     }
   }
 
