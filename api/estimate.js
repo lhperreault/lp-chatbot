@@ -39,7 +39,10 @@ async function findClient({ phone, email }) {
   } catch { return null; }
 }
 
-async function upsertClient(args, knownClientId = null) {
+// upsertClient accepts an optional `attribution` object. On CREATE we stamp
+// UTM source / campaign / referrer. On UPDATE we only fill them in if the
+// existing record has them empty — first-touch attribution sticks.
+async function upsertClient(args, knownClientId = null, attribution = null) {
   try {
     let existingId = knownClientId || await findClient({ phone: args.phone, email: args.email });
     const fields = {};
@@ -51,15 +54,51 @@ async function upsertClient(args, knownClientId = null) {
     fields["Source"] = SOURCE_CLIENTS;
 
     if (existingId) {
+      // Check existing record to avoid clobbering first-touch attribution.
+      try {
+        const existingRes = await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { headers: airtableHeaders() });
+        const existing    = await existingRes.json();
+        const ef = existing.fields || {};
+        if (attribution) {
+          if (!ef["UTM source"]   && attribution.utm_source)   fields["UTM source"]   = attribution.utm_source;
+          if (!ef["UTM campaign"] && attribution.utm_campaign) fields["UTM campaign"] = attribution.utm_campaign;
+          if (!ef["Referrer"]     && attribution.referrer)     fields["Referrer"]     = attribution.referrer;
+        }
+      } catch {}
       await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
       return { clientId: existingId, isNew: false };
     }
+
+    // New client — stamp attribution from scratch.
     fields["First contacted"] = new Date().toISOString().split("T")[0];
+    if (attribution) {
+      if (attribution.utm_source)   fields["UTM source"]   = attribution.utm_source;
+      if (attribution.utm_campaign) fields["UTM campaign"] = attribution.utm_campaign;
+      if (attribution.referrer)     fields["Referrer"]     = attribution.referrer;
+    }
     const res  = await fetch(airtableUrl(AT_CLIENTS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
     const data = await res.json();
     if (data.error) return { error: data.error.message };
     return { clientId: data.id, isNew: true };
   } catch (err) { return { error: err.message }; }
+}
+
+// Pretty-print attribution for Telegram. Falls back through utm_source
+// → utm_campaign → referrer → "direct" so every lead gets some label.
+function attributionLabel(attribution) {
+  if (!attribution) return "direct";
+  if (attribution.utm_source) {
+    return attribution.utm_campaign
+      ? `${attribution.utm_source} · ${attribution.utm_campaign}`
+      : attribution.utm_source;
+  }
+  if (attribution.gclid)  return "google ads (gclid)";
+  if (attribution.fbclid) return "facebook ads (fbclid)";
+  if (attribution.referrer) {
+    try { return `referrer: ${new URL(attribution.referrer).hostname}`; }
+    catch { return `referrer: ${attribution.referrer.slice(0, 60)}`; }
+  }
+  return "direct";
 }
 
 async function createJob(clientId, args, conversationLog) {
@@ -309,7 +348,7 @@ async function notifyQuote(state, formData) {
   }
 }
 
-async function notifyPartialLead(formData) {
+async function notifyPartialLead(formData, attribution) {
   try {
     const firstName = formData.firstName || "(no name yet)";
     const phone     = formData.phone     || "no phone";
@@ -321,6 +360,7 @@ async function notifyPartialLead(formData) {
 
     const parts = [
       `📋 <b>Partial form — ${htmlEscape(firstName)}</b>`,
+      `🎯 ${htmlEscape(attributionLabel(attribution))}`,
       `📞 ${htmlEscape(phone)} <i>(entered but didn't hit Submit)</i>`,
     ];
     if (address)   parts.push(`📍 ${htmlEscape(address)}`);
@@ -335,7 +375,7 @@ async function notifyPartialLead(formData) {
   }
 }
 
-async function notifyLead(formData) {
+async function notifyLead(formData, attribution) {
   try {
     const firstName = formData.firstName || "Customer";
     const phone     = formData.phone     || "no phone";
@@ -346,6 +386,7 @@ async function notifyLead(formData) {
 
     const parts = [
       `📥 <b>New form submission — ${htmlEscape(firstName)}</b>`,
+      `🎯 ${htmlEscape(attributionLabel(attribution))}`,
       `📞 ${htmlEscape(phone)}`,
       `📍 ${htmlEscape(address)}`,
       `🔧 Services: ${htmlEscape(services)}`,
@@ -670,7 +711,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST")    return res.status(405).json({ error: "Method not allowed" });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
 
-  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null, partial = false } = req.body;
+  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null, partial = false, attribution = null } = req.body;
 
   // ── PARTIAL capture branch ───────────────────────────────────────────────
   // Widget fires this when the user enters their phone + blurs out, or
@@ -680,9 +721,10 @@ export default async function handler(req, res) {
   if (partial === true) {
     try {
       console.log("[estimate] PARTIAL capture", {
-        firstName: formData.firstName,
-        hasPhone:  !!formData.phone,
-        services:  formData.services,
+        firstName:   formData.firstName,
+        hasPhone:    !!formData.phone,
+        services:    formData.services,
+        attribution: attribution ? attributionLabel(attribution) : null,
       });
       let partialClientId = null;
       let wasNew = false;
@@ -691,14 +733,14 @@ export default async function handler(req, res) {
           firstName: formData.firstName || "(name not entered)",
           phone:     formData.phone,
           address:   formData.address || "",
-        });
+        }, null, attribution);
         if (r?.clientId) partialClientId = r.clientId;
         wasNew = !!r?.isNew;
       }
       // Only ping on first capture for this phone — so repeated blurs don't
       // spam Telegram if they fix a typo.
       if (wasNew) {
-        notifyPartialLead(formData).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
+        notifyPartialLead(formData, attribution).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
       }
       return res.status(200).json({ ok: true, partial: true, clientId: partialClientId });
     } catch (err) {
@@ -731,7 +773,7 @@ export default async function handler(req, res) {
 
     const [leadRes, propRes] = await Promise.all([
       needsLead
-        ? upsertClient({ firstName: formData.firstName, phone: formData.phone, address: formData.address })
+        ? upsertClient({ firstName: formData.firstName, phone: formData.phone, address: formData.address }, null, attribution)
         : Promise.resolve(null),
       needsProperty
         ? lookupProperty(formData.address)
@@ -748,7 +790,7 @@ export default async function handler(req, res) {
     // followed by a full submission still produces the 📥 "submitted" ping.
     // Worst case if a customer resubmits: Luke gets two 📥 pings — that's
     // fine, the second one means "this person came back."
-    notifyLead(formData).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
+    notifyLead(formData, attribution).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
   }
 
   // Two-block system prompt:

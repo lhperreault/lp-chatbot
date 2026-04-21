@@ -680,6 +680,37 @@
   const STATE_TTL_MS = 30 * 60 * 1000; // 30 min
 
   const fd = { services: [], condition: '', firstName: '', phone: '', address: '', notes: '' };
+
+  // ── Ad attribution capture ─────────────────────────────────────────────
+  // Runs once on page load. Grabs UTM params + click IDs from the URL
+  // (preserved only when the landing page is the direct target of an ad
+  // click) and the HTTP referrer as a fallback. Persists to sessionStorage
+  // so internal navigation or widget re-renders don't wipe the origin.
+  const ATTR_KEY = 'lp_estimate_attribution_v1';
+  function captureAttribution() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(ATTR_KEY) || 'null');
+      if (saved && saved.firstSeenAt) return saved;
+    } catch {}
+    let params = {};
+    try { params = Object.fromEntries(new URL(window.location.href).searchParams.entries()); } catch {}
+    const attr = {
+      utm_source:   params.utm_source   || '',
+      utm_medium:   params.utm_medium   || '',
+      utm_campaign: params.utm_campaign || '',
+      utm_content:  params.utm_content  || '',
+      utm_term:     params.utm_term     || '',
+      gclid:        params.gclid        || '',
+      fbclid:       params.fbclid       || '',
+      msclkid:      params.msclkid      || '',
+      referrer:     (document.referrer || '').slice(0, 500),
+      landing_url:  (window.location.href || '').slice(0, 500),
+      firstSeenAt:  new Date().toISOString(),
+    };
+    try { sessionStorage.setItem(ATTR_KEY, JSON.stringify(attr)); } catch {}
+    return attr;
+  }
+  const attribution = captureAttribution();
   const prog = { 1: 33, 2: 66, 3: 100 };
   const history = [];
   let clientId = null, jobId = null, sending = false;
@@ -729,6 +760,7 @@
     const notesEl = document.getElementById('iNotes');
     const body = JSON.stringify({
       partial: true,
+      attribution,
       formData: {
         services:  fd.services,
         condition: fd.condition,
@@ -849,7 +881,7 @@
     pendingFirstResponse = fetch(ESTIMATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [], formData: fd, clientId: null, jobId: null })
+      body: JSON.stringify({ messages: [], formData: fd, clientId: null, jobId: null, attribution })
     }).then(r => r.json()).catch(err => ({ error: err.message }));
 
     runTransition();
@@ -923,7 +955,7 @@
       const res = await fetch(ESTIMATE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, formData: fd, clientId, jobId })
+        body: JSON.stringify({ messages: history, formData: fd, clientId, jobId, attribution })
       });
       const data = await res.json();
       typing.classList.remove('show');
