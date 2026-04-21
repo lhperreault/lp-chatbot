@@ -713,6 +713,62 @@
   });
   // iNotes is a textarea — allow Enter for new lines, but block Ctrl/Cmd+Enter submit.
 
+  // ── Partial-lead capture ────────────────────────────────────────────────
+  // If the customer types their phone but never clicks "Get My Estimate"
+  // (bounces, closes the tab, phone rings, whatever), we still want Luke
+  // to know they showed interest. Fires once per session.
+  let partialSent = false;
+  function firePartialCapture() {
+    if (partialSent) return;
+    const phoneEl = document.getElementById('iPhone');
+    if (!phoneEl) return;
+    const digits = phoneEl.value.replace(/\D/g, '');
+    if (digits.length < 7) return; // ignore very short / empty values
+    const nameEl  = document.getElementById('iName');
+    const addrEl  = document.getElementById('iAddr');
+    const notesEl = document.getElementById('iNotes');
+    const body = JSON.stringify({
+      partial: true,
+      formData: {
+        services:  fd.services,
+        condition: fd.condition,
+        firstName: (nameEl  && nameEl.value.trim())  || '',
+        phone:     phoneEl.value.trim(),
+        address:   (addrEl  && addrEl.value.trim())  || '',
+        notes:     (notesEl && notesEl.value.trim()) || '',
+      },
+    });
+    partialSent = true;
+    // sendBeacon is designed for page-unload reliability; falls back to fetch
+    // if the browser's sendBeacon isn't available or rejects the payload.
+    let delivered = false;
+    if (navigator.sendBeacon) {
+      try {
+        delivered = navigator.sendBeacon(ESTIMATE_URL, new Blob([body], { type: 'application/json' }));
+      } catch {}
+    }
+    if (!delivered) {
+      fetch(ESTIMATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => { partialSent = false; /* allow retry */ });
+    }
+  }
+  // Fire when the user tabs/clicks out of the phone field with ≥7 digits —
+  // the typical "they entered it and moved on" moment.
+  const _phoneEl = document.getElementById('iPhone');
+  if (_phoneEl) _phoneEl.addEventListener('blur', firePartialCapture);
+  // Also fire when the page is being hidden (tab close, nav away, mobile
+  // backgrounding) as a safety net for people who never blur out manually.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') firePartialCapture();
+  });
+  // When the user actually submits, mark partial as "sent" so the beacon
+  // on unload doesn't send a redundant partial capture after a full submit.
+  // (We'll set this inside lpSubmit below — the marker here is informational.)
+
   // ── State persistence ─────────────────────────────────────────────────────
   // If the page reloads or Elementor re-renders the widget, we restore the
   // user's progress instead of throwing them back to step 1.
@@ -785,6 +841,7 @@
     fd.firstName = n; fd.phone = p;
     fd.address = document.getElementById('iAddr').value.trim();
     fd.notes   = (document.getElementById('iNotes')?.value || '').trim();
+    partialSent = true; // full submit supersedes any partial capture
     currentPhase = 'transition';
     saveState();
 

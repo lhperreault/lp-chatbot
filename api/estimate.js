@@ -309,6 +309,32 @@ async function notifyQuote(state, formData) {
   }
 }
 
+async function notifyPartialLead(formData) {
+  try {
+    const firstName = formData.firstName || "(no name yet)";
+    const phone     = formData.phone     || "no phone";
+    const address   = formData.address   || null;
+    const services  = Array.isArray(formData.services) && formData.services.length
+      ? formData.services.join(", ")
+      : null;
+    const condition = formData.condition || null;
+
+    const parts = [
+      `📋 <b>Partial form — ${htmlEscape(firstName)}</b>`,
+      `📞 ${htmlEscape(phone)} <i>(entered but didn't hit Submit)</i>`,
+    ];
+    if (address)   parts.push(`📍 ${htmlEscape(address)}`);
+    if (services)  parts.push(`🔧 Services: ${htmlEscape(services)}`);
+    if (condition) parts.push(`🌱 Condition: ${htmlEscape(condition)}`);
+    parts.push("");
+    parts.push(`<i>If they finish, you'll see a 📥 New form submission ping next. If not, they bailed.</i>`);
+
+    await sendTelegramNotification(parts.join("\n"));
+  } catch (err) {
+    console.error("[notifyPartialLead] error:", err);
+  }
+}
+
 async function notifyLead(formData) {
   try {
     const firstName = formData.firstName || "Customer";
@@ -644,7 +670,43 @@ export default async function handler(req, res) {
   if (req.method !== "POST")    return res.status(405).json({ error: "Method not allowed" });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
 
-  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null } = req.body;
+  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null, partial = false } = req.body;
+
+  // ── PARTIAL capture branch ───────────────────────────────────────────────
+  // Widget fires this when the user enters their phone + blurs out, or
+  // closes the tab (sendBeacon). We don't call the AI — just upsert the
+  // lead so it lands in Airtable, then ping Telegram. The 📋 ping explicitly
+  // says "entered but didn't hit Submit" so Luke knows the difference.
+  if (partial === true) {
+    try {
+      console.log("[estimate] PARTIAL capture", {
+        firstName: formData.firstName,
+        hasPhone:  !!formData.phone,
+        services:  formData.services,
+      });
+      let partialClientId = null;
+      let wasNew = false;
+      if (formData.phone) {
+        const r = await upsertClient({
+          firstName: formData.firstName || "(name not entered)",
+          phone:     formData.phone,
+          address:   formData.address || "",
+        });
+        if (r?.clientId) partialClientId = r.clientId;
+        wasNew = !!r?.isNew;
+      }
+      // Only ping on first capture for this phone — so repeated blurs don't
+      // spam Telegram if they fix a typo.
+      if (wasNew) {
+        notifyPartialLead(formData).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
+      }
+      return res.status(200).json({ ok: true, partial: true, clientId: partialClientId });
+    } catch (err) {
+      console.error("[estimate] partial branch error:", err);
+      return res.status(200).json({ ok: false, partial: true });
+    }
+  }
+
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
   const state = { clientId: incomingClientId, jobId: incomingJobId, quoteJustSent: false, currentAssistantText: "" };
   const latestUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || null;
@@ -681,12 +743,12 @@ export default async function handler(req, res) {
     propertyData = propRes;
     console.log("[estimate] property lookup result:", propRes);
 
-    // Ping Telegram the moment a fresh lead submits the form — before the
-    // chat even starts. Only fires for NEW clients (isNew flag) so phone
-    // or address matches don't trigger duplicate pings on retries/refreshes.
-    if (leadRes?.isNew) {
-      notifyLead(formData).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
-    }
+    // Ping Telegram the moment someone completes the form. Fires on every
+    // first-turn submission (not gated on isNew) so that a partial capture
+    // followed by a full submission still produces the 📥 "submitted" ping.
+    // Worst case if a customer resubmits: Luke gets two 📥 pings — that's
+    // fine, the second one means "this person came back."
+    notifyLead(formData).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
   }
 
   // Two-block system prompt:
