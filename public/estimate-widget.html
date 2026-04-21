@@ -687,10 +687,16 @@
   // click) and the HTTP referrer as a fallback. Persists to sessionStorage
   // so internal navigation or widget re-renders don't wipe the origin.
   const ATTR_KEY = 'lp_estimate_attribution_v1';
+  // Returns { ...attr, isFreshCapture: bool } — freshly computed on first
+  // visit, restored from sessionStorage on subsequent calls within the
+  // same session. The isFreshCapture flag tells us whether to fire the
+  // one-time ad-click ping (so we don't re-ping on every page reload).
   function captureAttribution() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(ATTR_KEY) || 'null');
-      if (saved && saved.firstSeenAt) return saved;
+      if (saved && saved.firstSeenAt) {
+        return Object.assign({}, saved, { isFreshCapture: false });
+      }
     } catch {}
     let params = {};
     try { params = Object.fromEntries(new URL(window.location.href).searchParams.entries()); } catch {}
@@ -708,9 +714,34 @@
       firstSeenAt:  new Date().toISOString(),
     };
     try { sessionStorage.setItem(ATTR_KEY, JSON.stringify(attr)); } catch {}
-    return attr;
+    return Object.assign({}, attr, { isFreshCapture: true });
   }
   const attribution = captureAttribution();
+
+  // ── Ad-click ping ──────────────────────────────────────────────────────
+  // Fires once per browser session when the landing page URL carries a
+  // paid-ad signature (utm_source, gclid, fbclid). Organic/direct traffic
+  // stays silent — Telegram pings are reserved for actionable signals
+  // where Luke is either paying per click (ad) or has contact info
+  // (partial/full/quote/booking).
+  (function fireAdClickPingIfNeeded() {
+    if (!attribution.isFreshCapture) return;
+    const isPaid = attribution.utm_source || attribution.gclid || attribution.fbclid || attribution.msclkid;
+    if (!isPaid) return;
+    const body = JSON.stringify({ adClick: true, attribution });
+    let delivered = false;
+    if (navigator.sendBeacon) {
+      try { delivered = navigator.sendBeacon(ESTIMATE_URL, new Blob([body], { type: 'application/json' })); } catch {}
+    }
+    if (!delivered) {
+      fetch(ESTIMATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  })();
   const prog = { 1: 33, 2: 66, 3: 100 };
   const history = [];
   let clientId = null, jobId = null, sending = false;

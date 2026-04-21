@@ -711,7 +711,31 @@ export default async function handler(req, res) {
   if (req.method !== "POST")    return res.status(405).json({ error: "Method not allowed" });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
 
-  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null, partial = false, attribution = null } = req.body;
+  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null, partial = false, adClick = false, attribution = null } = req.body;
+
+  // ── AD CLICK ping branch ─────────────────────────────────────────────────
+  // Fires when the widget detects the page was loaded from a tagged ad URL
+  // (utm_source / gclid / fbclid / msclkid). Fire-and-forget Telegram ping,
+  // no Airtable write, no AI call — the partial/full flow handles Airtable
+  // if they actually interact with the form.
+  if (adClick === true) {
+    try {
+      const label = attributionLabel(attribution);
+      console.log("[estimate] AD CLICK ping", { label, referrer: attribution?.referrer });
+      const parts = [
+        `👀 <b>Ad click — ${htmlEscape(label)}</b>`,
+      ];
+      if (attribution?.referrer)    parts.push(`🔗 Referrer: ${htmlEscape(attribution.referrer.slice(0, 120))}`);
+      if (attribution?.landing_url) parts.push(`📄 Landing: ${htmlEscape(attribution.landing_url.slice(0, 120))}`);
+      parts.push("");
+      parts.push(`<i>Someone just clicked a paid-ad link. Watch for a 📋 / 📥 if they fill out the form within the next few minutes.</i>`);
+      sendTelegramNotification(parts.join("\n")).catch(err => console.error("[adClick] notify error:", err));
+      return res.status(200).json({ ok: true, adClick: true });
+    } catch (err) {
+      console.error("[estimate] adClick branch error:", err);
+      return res.status(200).json({ ok: false, adClick: true });
+    }
+  }
 
   // ── PARTIAL capture branch ───────────────────────────────────────────────
   // Widget fires this when the user enters their phone + blurs out, or
