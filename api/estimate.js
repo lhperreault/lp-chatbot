@@ -309,6 +309,32 @@ async function notifyQuote(state, formData) {
   }
 }
 
+async function notifyLead(formData) {
+  try {
+    const firstName = formData.firstName || "Customer";
+    const phone     = formData.phone     || "no phone";
+    const address   = formData.address   || "no address";
+    const services  = Array.isArray(formData.services) ? formData.services.join(", ") : (formData.services || "—");
+    const condition = formData.condition || "—";
+    const notes     = (formData.notes && formData.notes.trim()) ? formData.notes.trim() : null;
+
+    const parts = [
+      `📥 <b>New form submission — ${htmlEscape(firstName)}</b>`,
+      `📞 ${htmlEscape(phone)}`,
+      `📍 ${htmlEscape(address)}`,
+      `🔧 Services: ${htmlEscape(services)}`,
+      `🌱 Condition: ${htmlEscape(condition)}`,
+    ];
+    if (notes) parts.push(`📝 Notes: <i>${htmlEscape(notes)}</i>`);
+    parts.push("");
+    parts.push(`<i>Chat starting now. You'll get a follow-up ping with the full quote + draft text if they engage. If no quote ping follows within ~30 min, they bailed.</i>`);
+
+    await sendTelegramNotification(parts.join("\n"));
+  } catch (err) {
+    console.error("[notifyLead] error:", err);
+  }
+}
+
 async function notifyBooking(state, formData, bookingDate) {
   try {
     const firstName = formData.firstName || "Customer";
@@ -654,6 +680,13 @@ export default async function handler(req, res) {
     if (leadRes?.error)    console.log("[estimate] upsertClient error:", leadRes.error);
     propertyData = propRes;
     console.log("[estimate] property lookup result:", propRes);
+
+    // Ping Telegram the moment a fresh lead submits the form — before the
+    // chat even starts. Only fires for NEW clients (isNew flag) so phone
+    // or address matches don't trigger duplicate pings on retries/refreshes.
+    if (leadRes?.isNew) {
+      notifyLead(formData).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
+    }
   }
 
   // Two-block system prompt:
