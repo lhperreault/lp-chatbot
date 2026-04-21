@@ -645,7 +645,7 @@ Name: ${firstName}
 Phone: ${phone}
 Address: ${address || "not provided"}
 Services requested: ${svcList}
-General condition: ${condition}
+General condition: ${condition || "not yet provided — ask during qualification"}
 Customer notes: ${notesLine}
 ${propertyBlock}
 ${firstMessageRule}`;

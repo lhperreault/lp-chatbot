@@ -549,7 +549,7 @@
     </div>
     <div class="lp-prog">
       <div class="lp-prog-track"><div class="lp-prog-fill" id="lpFill"></div></div>
-      <span class="lp-prog-label" id="lpLabel">1 / 3</span>
+      <span class="lp-prog-label" id="lpLabel">1 / 2</span>
     </div>
 
     <div class="lp-inner">
@@ -583,31 +583,8 @@
         <div class="lp-btns"><button type="button" class="lp-primary" onclick="lpNext(1)">Continue →</button></div>
       </div>
 
-      <!-- Step 2 -->
+      <!-- Step 2 (contact info) -->
       <div class="lp-step" id="lpS2">
-        <div class="lp-eyebrow">Almost there</div>
-        <h2 class="lp-q">When was the last time it was cleaned?</h2>
-        <p class="lp-sub">Helps us give you an accurate range.</p>
-        <div class="lp-cards c3">
-          <button type="button" class="lp-pick" data-grp="cond" data-val="Cleaned within the last 3 years" onclick="lpPick(this,'cond')">
-            <span class="lp-pick-ic">🌱</span><span class="lp-pick-t">Within 3 years</span><span class="lp-pick-d">Fairly recent</span>
-          </button>
-          <button type="button" class="lp-pick" data-grp="cond" data-val="Not cleaned in 3+ years" onclick="lpPick(this,'cond')">
-            <span class="lp-pick-ic">🟡</span><span class="lp-pick-t">3+ years ago</span><span class="lp-pick-d">Been a while</span>
-          </button>
-          <button type="button" class="lp-pick" data-grp="cond" data-val="Never cleaned or can't remember" onclick="lpPick(this,'cond')">
-            <span class="lp-pick-ic">🔴</span><span class="lp-pick-t">Never / can't recall</span><span class="lp-pick-d">Long overdue</span>
-          </button>
-        </div>
-        <span class="lp-err" id="e2">Please pick one.</span>
-        <div class="lp-btns">
-          <button type="button" class="lp-secondary" onclick="lpBack(2)">Back</button>
-          <button type="button" class="lp-primary" onclick="lpNext(2)">Continue →</button>
-        </div>
-      </div>
-
-      <!-- Step 3 -->
-      <div class="lp-step" id="lpS3">
         <div class="lp-eyebrow">Last step</div>
         <h2 class="lp-q">Where should we send your estimate?</h2>
         <p class="lp-sub">We'll reach out within a few hours — no spam, ever.</p>
@@ -615,9 +592,9 @@
         <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="text" inputmode="tel" placeholder="(555) 000-0000" autocomplete="tel" form="__lp_isolated__"></div>
         <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="123 Main St, Doylestown, PA" autocomplete="street-address" form="__lp_isolated__"></div>
         <div class="lp-field"><label>Anything else?<span class="lp-optional">Optional</span></label><textarea class="lp-input" id="iNotes" rows="2" placeholder="Gate code, pets, access, special requests…" form="__lp_isolated__"></textarea></div>
-        <span class="lp-err" id="e3">Please fill in your name and phone number.</span>
+        <span class="lp-err" id="e2">Please fill in your name and phone number.</span>
         <div class="lp-btns">
-          <button type="button" class="lp-secondary" onclick="lpBack(3)">Back</button>
+          <button type="button" class="lp-secondary" onclick="lpBack(2)">Back</button>
           <button type="button" class="lp-primary" onclick="lpSubmit()">Get My Estimate →</button>
         </div>
       </div>
@@ -742,7 +719,7 @@
       }).catch(() => {});
     }
   })();
-  const prog = { 1: 33, 2: 66, 3: 100 };
+  const prog = { 1: 50, 2: 100 };
   const history = [];
   let clientId = null, jobId = null, sending = false;
   let pendingFirstResponse = null;
@@ -870,14 +847,13 @@
     document.querySelectorAll('#lpForm .lp-step').forEach(s => s.classList.remove('active'));
     document.getElementById('lpS' + n).classList.add('active');
     document.getElementById('lpFill').style.width = prog[n] + '%';
-    document.getElementById('lpLabel').textContent = n + ' / 3';
+    document.getElementById('lpLabel').textContent = n + ' / 2';
     currentStep = n;
     saveState();
   }
 
   window.lpNext = function (step) {
     if (step === 1 && !fd.services.length) return showErr('e1');
-    if (step === 2 && !fd.condition)        return showErr('e2');
     hideErr('e' + step);
     setStep(step + 1);
   };
@@ -899,8 +875,8 @@
   window.lpSubmit = function () {
     const n = document.getElementById('iName').value.trim();
     const p = document.getElementById('iPhone').value.trim();
-    if (!n || !p) return showErr('e3');
-    hideErr('e3');
+    if (!n || !p) return showErr('e2');
+    hideErr('e2');
     fd.firstName = n; fd.phone = p;
     fd.address = document.getElementById('iAddr').value.trim();
     fd.notes   = (document.getElementById('iNotes')?.value || '').trim();
@@ -1061,7 +1037,7 @@
     const a  = document.getElementById('iAddr');
     const nt = document.getElementById('iNotes');
     if (n) n.value = ''; if (p) p.value = ''; if (a) a.value = ''; if (nt) nt.value = '';
-    ['e1','e2','e3'].forEach(hideErr);
+    ['e1','e2'].forEach(hideErr);
 
     const formEl = document.getElementById('lpForm');
     const transEl = document.getElementById('lpTransition');
@@ -1093,6 +1069,7 @@
 
     Object.assign(fd, saved.fd || {});
     currentStep  = saved.currentStep  || 1;
+    if (currentStep > 2) currentStep = 2; // clamp — form is now 2 steps
     currentPhase = saved.currentPhase || 'form';
     if (Array.isArray(saved.history)) { history.length = 0; history.push.apply(history, saved.history); }
     clientId = saved.clientId || null;
