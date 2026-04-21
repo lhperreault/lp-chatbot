@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { google } from "googleapis";
 
 // ─── CORS helper ─────────────────────────────────────────────────────────────
@@ -170,53 +170,14 @@ async function bookAppointment(data) {
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
-function buildSystemPrompt(formData, propertyData) {
-  const { firstName, phone, address, services, condition, notes } = formData;
-  const svcList = Array.isArray(services) ? services.join(", ") : (services || "");
-  const notesLine = (notes && notes.trim()) ? notes.trim() : "none";
-  // We have meaningful property data only if sqft came back. Stories is often missing from
-  // RentCast's response so we handle three cases: full / sqft only / nothing.
-  const hasSqft    = propertyData && !propertyData.error && propertyData.squareFootage;
-  const hasStories = hasSqft && propertyData.stories;
-
-  const propertyBlock = hasSqft
-    ? `\nPROPERTY DETAILS (already pulled from public records for this address — USE THESE, do not ask for the ones we already have):
-- Square footage: ${propertyData.squareFootage}
-- Stories: ${propertyData.stories || "unknown — ASK the customer"}
-- Bedrooms: ${propertyData.bedrooms || "unknown"}
-- Bathrooms: ${propertyData.bathrooms || "unknown"}
-- Year built: ${propertyData.yearBuilt || "unknown"}
-- Property type: ${propertyData.propertyType || "unknown"}
-`
-    : "";
-
-  let firstMessageRule;
-  if (hasSqft && hasStories) {
-    firstMessageRule = `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
-Exactly this template, filled with the values from PROPERTY DETAILS above:
-"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage} sq ft and ${propertyData.stories} stories. Does that sound right?"
-Do NOT ask for sqft or stories. Do NOT greet differently. Wait for their reply. If they correct the numbers, use their correction.`;
-  } else if (hasSqft) {
-    firstMessageRule = `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
-Exactly this template:
-"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage} sq ft. Quick one — how many stories is it?"
-We only got sqft from public records; stories was missing, so ASK for it here. Do NOT ask for sqft (we have it). Do NOT greet differently.`;
-  } else {
-    firstMessageRule = `YOUR FIRST MESSAGE:
-Greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they selected in one sentence, then immediately ask the first qualification question for their first service. No long preamble.`;
-  }
-
-  return `You are the LP Pressure Wash AI Estimator on the website estimate form.
-
-CUSTOMER CONTEXT — already collected. Do NOT ask for these again:
-Name: ${firstName}
-Phone: ${phone}
-Address: ${address || "not provided"}
-Services requested: ${svcList}
-General condition: ${condition}
-Customer notes: ${notesLine}
-${propertyBlock}
-${firstMessageRule}
+// STATIC_SYSTEM_PROMPT holds every rule / pricing table / flow that never
+// changes between customers. It's cached via cache_control so repeat traffic
+// across ALL customer sessions hits the Anthropic prompt cache instead of
+// paying full price on the prefix each time. Everything customer-specific
+// (name, phone, address, services, property data, first-message template)
+// lives in the dynamic block that's built per request — placed AFTER the
+// cache breakpoint so its volatility doesn't invalidate the prefix.
+const STATIC_SYSTEM_PROMPT = `You are the LP Pressure Wash AI Estimator on the website estimate form.
 
 CORE RULES:
 - ONE question per message. Never stack questions.
@@ -224,18 +185,23 @@ CORE RULES:
 - Emojis: 🏠 House, 🪵 Deck, 🧱 Patio, 🌿 Fence, 🌧️ Gutters, 🚗 Driveway
 - Quote range: always add $50 to calculated price (e.g. $310 calculated = "$310–$360"). Never explain the math.
 - MINIMUM FEE: If calculated price < $120, say "We have a $120 minimum visit fee — would you like to add another service?" Never show sub-$120 quote.
-- Phone already captured (${phone}). Do NOT ask for it again. You may confirm if helpful.
+- Phone is already captured in CUSTOMER CONTEXT (appears below this prompt). Do NOT ask for it again. You may confirm if helpful.
 - AIRTABLE: Call upsert_client on your very first turn with name + phone + address. Call save_quote_job immediately when you reveal a price. Call confirm_booking when customer locks in a date.
+- Booking: Only check calendar when customer explicitly asks to schedule. Season starts May 16, 2026 (Luke and his brother are finishing college — keep it casual).
+- Bundle: 30% off second/third service when bundled with house wash. Mention discount applied on final team review.
+- Veterans/Seniors: 10% off, only if customer asks. Does not stack.
+- Plant/pet safety: "We use professional-grade soaps safe for all plants and pets." Never mention bleach.
+- Insurance: Yes, general liability (Hiscox).
+- Year: 2026.
 
 ==========================================
 MULTI-SERVICE FLOW (CRITICAL — read carefully):
-The customer already told us every service they want on the form:
-  ${svcList}
+The customer already told us every service they want on the form (see "Services requested" in CUSTOMER CONTEXT below).
 You must quote EACH of those services before you're done. After you
 finalize a quote for one service, DO NOT ask "would you like to add
 another service?" or "anything else?" — they already told you.
 Instead, immediately pivot to the next unfinished service from the
-list above. Example transition:
+CUSTOMER CONTEXT list. Example transition:
 
   "Your estimated price for the house wash is $310–$360. Our team
   does a final review for the exact number. On to the deck now 🪵 —
@@ -250,7 +216,7 @@ in order: house → deck → patio → fence → gutters → driveway.
 ==========================================
 
 CUSTOMER-NOTES HANDLING (CRITICAL):
-The customer notes above often contain pricing-impacting details.
+The customer notes in CUSTOMER CONTEXT often contain pricing-impacting details.
 Scan the notes for keywords and apply the matching rule BEFORE quoting:
 - "one side" / "1 side" / "single side" / "just the front" / "just the back" → partial house wash, apply PARTIAL SIDES MATH below.
 - "two sides" / "2 sides" / "front and back" / "the two sides facing X" → partial house wash at 2 of 4 sides.
@@ -291,17 +257,11 @@ process that protects your home, plants, and pets."
 Then follow the MULTI-SERVICE FLOW rule above — either pivot to the
 next service or wrap up.
 ==========================================
-- Booking: Only check calendar when customer explicitly asks to schedule. Season starts May 16, 2026 (Luke and his brother are finishing college — keep it casual).
-- Bundle: 30% off second/third service when bundled with house wash. Mention discount applied on final team review.
-- Veterans/Seniors: 10% off, only if customer asks. Does not stack.
-- Plant/pet safety: "We use professional-grade soaps safe for all plants and pets." Never mention bleach.
-- Insurance: Yes, general liability (Hiscox).
-- Year: 2026.
 
 QUALIFICATION FLOWS — one question at a time:
 
 HOUSE EXTERIOR 🏠:
-1. Confirm sqft + stories using PROPERTY DETAILS above (your first message already does this). Wait for customer reply. If they correct the numbers, trust the correction.
+1. Confirm sqft + stories using PROPERTY DETAILS in CUSTOMER CONTEXT (your first message already does this). Wait for customer reply. If they correct the numbers, trust the correction.
 2. Primary siding material? (Vinyl, Wood, Brick, Stucco, etc.)
 3. Any dormers, porch, or chimney to clean?
 4. How long since last cleaning, and how dirty would you say it is?
@@ -360,28 +320,111 @@ GUTTERS: 1-story $90–140 | Mixed 1&2 $130–180 | 2-story $160–210 | 3-story
 OTHER: No roof washing generally. Awnings = human review, get phone + photo. Furniture <3 items free, 3+ = $5/$10 wooden.
 
 Contact: LP Pressure Washing | lhppressurewashing@gmail.com | (267) 912-8285`;
+
+// Dynamic per-request text. Placed AFTER the cached block so it doesn't
+// invalidate the prefix.
+function buildDynamicContext(formData, propertyData) {
+  const { firstName, phone, address, services, condition, notes } = formData;
+  const svcList = Array.isArray(services) ? services.join(", ") : (services || "");
+  const notesLine = (notes && notes.trim()) ? notes.trim() : "none";
+
+  const hasSqft    = propertyData && !propertyData.error && propertyData.squareFootage;
+  const hasStories = hasSqft && propertyData.stories;
+
+  const propertyBlock = hasSqft
+    ? `\nPROPERTY DETAILS (already pulled from public records for this address — USE THESE, do not ask for the ones we already have):
+- Square footage: ${propertyData.squareFootage}
+- Stories: ${propertyData.stories || "unknown — ASK the customer"}
+- Bedrooms: ${propertyData.bedrooms || "unknown"}
+- Bathrooms: ${propertyData.bathrooms || "unknown"}
+- Year built: ${propertyData.yearBuilt || "unknown"}
+- Property type: ${propertyData.propertyType || "unknown"}
+`
+    : "";
+
+  let firstMessageRule;
+  if (hasSqft && hasStories) {
+    firstMessageRule = `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
+Exactly this template, filled with the values from PROPERTY DETAILS above:
+"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage} sq ft and ${propertyData.stories} stories. Does that sound right?"
+Do NOT ask for sqft or stories. Do NOT greet differently. Wait for their reply. If they correct the numbers, use their correction.`;
+  } else if (hasSqft) {
+    firstMessageRule = `YOUR FIRST MESSAGE (MANDATORY — do not deviate):
+Exactly this template:
+"Hey ${firstName}! 👋 I pulled up your property — looks like about ${propertyData.squareFootage} sq ft. Quick one — how many stories is it?"
+We only got sqft from public records; stories was missing, so ASK for it here. Do NOT ask for sqft (we have it). Do NOT greet differently.`;
+  } else {
+    firstMessageRule = `YOUR FIRST MESSAGE:
+Greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they selected in one sentence, then immediately ask the first qualification question for their first service. No long preamble.`;
+  }
+
+  return `CUSTOMER CONTEXT — already collected. Do NOT ask for these again:
+Name: ${firstName}
+Phone: ${phone}
+Address: ${address || "not provided"}
+Services requested: ${svcList}
+General condition: ${condition}
+Customer notes: ${notesLine}
+${propertyBlock}
+${firstMessageRule}`;
 }
 
-// ─── Tools ────────────────────────────────────────────────────────────────────
+// ─── Tools (Anthropic format: name/description/input_schema at top level) ────
 const tools = [
-  { type: "function", function: { name: "upsert_client", description: "Find or create client. Call on first turn and whenever new info is learned.", parameters: { type: "object", properties: { firstName: { type: "string" }, fullName: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, address: { type: "string" } }, required: ["firstName"] } } },
-  { type: "function", function: { name: "save_quote_job", description: "Save quote to Airtable immediately when price is revealed. upsert_client must run first.", parameters: { type: "object", properties: { serviceType: { type: "string" }, propertySnapshot: { type: "string" }, quote: { type: "string" }, quoteAmount: { type: "number" }, reasoning: { type: "string" }, concerns: { type: "string" } }, required: ["serviceType", "quote", "quoteAmount"] } } },
-  { type: "function", function: { name: "confirm_booking", description: "Mark job as Booked with agreed date.", parameters: { type: "object", properties: { bookingDate: { type: "string" }, customerConfirmText: { type: "string" } }, required: ["bookingDate"] } } },
-  { type: "function", function: { name: "check_calendar_availability", description: "Check open dates. Only call when customer explicitly asks to book.", parameters: { type: "object", properties: { weeksAhead: { type: "number" } } } } },
-  { type: "function", function: { name: "lookup_property", description: "Look up property from address for house wash quoting.", parameters: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } } },
-  { type: "function", function: { name: "book_appointment", description: "Book confirmed appointment on Google Calendar.", parameters: { type: "object", properties: { customerName: { type: "string" }, customerPhone: { type: "string" }, customerEmail: { type: "string" }, serviceType: { type: "string" }, date: { type: "string" }, quoteAmount: { type: "string" }, notes: { type: "string" } }, required: ["customerName", "customerPhone", "serviceType", "date"] } } },
+  { name: "upsert_client", description: "Find or create client. Call on first turn and whenever new info is learned.", input_schema: { type: "object", properties: { firstName: { type: "string" }, fullName: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, address: { type: "string" } }, required: ["firstName"] } },
+  { name: "save_quote_job", description: "Save quote to Airtable immediately when price is revealed. upsert_client must run first.", input_schema: { type: "object", properties: { serviceType: { type: "string" }, propertySnapshot: { type: "string" }, quote: { type: "string" }, quoteAmount: { type: "number" }, reasoning: { type: "string" }, concerns: { type: "string" } }, required: ["serviceType", "quote", "quoteAmount"] } },
+  { name: "confirm_booking", description: "Mark job as Booked with agreed date.", input_schema: { type: "object", properties: { bookingDate: { type: "string" }, customerConfirmText: { type: "string" } }, required: ["bookingDate"] } },
+  { name: "check_calendar_availability", description: "Check open dates. Only call when customer explicitly asks to book.", input_schema: { type: "object", properties: { weeksAhead: { type: "number" } } } },
+  { name: "lookup_property", description: "Look up property from address for house wash quoting.", input_schema: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } },
+  { name: "book_appointment", description: "Book confirmed appointment on Google Calendar.", input_schema: { type: "object", properties: { customerName: { type: "string" }, customerPhone: { type: "string" }, customerEmail: { type: "string" }, serviceType: { type: "string" }, date: { type: "string" }, quoteAmount: { type: "string" }, notes: { type: "string" } }, required: ["customerName", "customerPhone", "serviceType", "date"] } },
 ];
+
+const MODEL = "claude-haiku-4-5";
+
+// ─── Dispatcher: run the named tool, update mutable state via the setters ────
+async function runTool(name, args, state, formData, originalMessages) {
+  if (name === "upsert_client") {
+    const r = await upsertClient(args, state.clientId);
+    if (r.clientId) state.clientId = r.clientId;
+    return r;
+  }
+  if (name === "save_quote_job") {
+    if (!state.clientId) {
+      const r = await upsertClient({ firstName: formData.firstName || "Unknown", phone: formData.phone, address: formData.address }, null);
+      if (r.clientId) state.clientId = r.clientId;
+    }
+    if (state.clientId) {
+      const convoLog = JSON.stringify([...originalMessages, { role: "assistant", content: state.currentAssistantText || "" }]);
+      const r = await createJob(state.clientId, args, convoLog);
+      if (r.jobId) { state.jobId = r.jobId; state.quoteJustSent = true; }
+      return r;
+    }
+    return { error: "No clientId available" };
+  }
+  if (name === "lookup_property")              return await lookupProperty(args.address);
+  if (name === "check_calendar_availability")  return await checkCalendarAvailability(args.weeksAhead);
+  if (name === "book_appointment")             return await bookAppointment(args);
+  if (name === "confirm_booking") {
+    if (!state.jobId) return { error: "No jobId" };
+    const r = await updateJob(state.jobId, { "Booking date": args.bookingDate, "Lead status": "Booked" });
+    if (state.clientId && args.customerConfirmText) {
+      await logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Inbound", author: "Customer", message: args.customerConfirmText, intent: "booking_confirmed" });
+    }
+    return r;
+  }
+  return { error: "Unknown tool" };
+}
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST")    return res.status(405).json({ error: "Method not allowed" });
-  if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "OPENAI_API_KEY not configured" });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
 
   const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null } = req.body;
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  let clientId = incomingClientId, jobId = incomingJobId, quoteJustSent = false;
+  const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+  const state = { clientId: incomingClientId, jobId: incomingJobId, quoteJustSent: false, currentAssistantText: "" };
   const latestUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || null;
   const isFirstTurn = messages.length === 0;
 
@@ -394,10 +437,10 @@ export default async function handler(req, res) {
   });
 
   // On the first turn, run lead upsert + property lookup in parallel so we
-  // don't stack their latencies in front of the OpenAI call.
+  // don't stack their latencies in front of the Anthropic call.
   let propertyData = null;
   if (isFirstTurn) {
-    const needsLead = !clientId && formData.firstName && formData.phone;
+    const needsLead = !state.clientId && formData.firstName && formData.phone;
     const needsProperty = formData.address
       && Array.isArray(formData.services)
       && formData.services.some(s => /house/i.test(s));
@@ -411,53 +454,124 @@ export default async function handler(req, res) {
         : Promise.resolve(null),
     ]);
 
-    if (leadRes?.clientId) clientId = leadRes.clientId;
+    if (leadRes?.clientId) state.clientId = leadRes.clientId;
     if (leadRes?.error)    console.log("[estimate] upsertClient error:", leadRes.error);
     propertyData = propRes;
     console.log("[estimate] property lookup result:", propRes);
   }
 
-  const systemPrompt = buildSystemPrompt(formData, propertyData);
+  // Two-block system prompt:
+  //   [0] STATIC — rules + pricing + flows, cached via cache_control
+  //   [1] DYNAMIC — CUSTOMER CONTEXT + PROPERTY DETAILS + FIRST MESSAGE RULE
+  // Only the static block carries cache_control, so every customer hits the
+  // same cached prefix regardless of their own context.
+  const systemBlocks = [
+    { type: "text", text: STATIC_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+    { type: "text", text: buildDynamicContext(formData, propertyData) },
+  ];
+
+  // Anthropic requires messages to START with a user turn. The widget sends
+  // messages: [] on the first call (AI should open the conversation), so we
+  // prepend a synthetic kickoff user message. On later turns the widget's
+  // first entry is the AI's greeting (role: "assistant") — we prepend the
+  // kickoff then too so alternation stays valid.
+  const kickoff = { role: "user", content: "Hi, I just filled out the estimate form." };
+  const workingMessages = messages.length === 0 || messages[0].role !== "user"
+    ? [kickoff, ...messages]
+    : [...messages];
 
   try {
-    let response = await openai.chat.completions.create({ model: "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: systemPrompt }, ...messages], tools, tool_choice: "auto" });
-    let assistantMessage = response.choices[0].message;
+    let response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system: systemBlocks,
+      tools,
+      messages: workingMessages,
+    });
 
-    if (assistantMessage.tool_calls?.length) {
+    console.log("[estimate] anthropic usage", {
+      input:        response.usage?.input_tokens,
+      output:       response.usage?.output_tokens,
+      cacheWrite:   response.usage?.cache_creation_input_tokens,
+      cacheRead:    response.usage?.cache_read_input_tokens,
+      stop_reason:  response.stop_reason,
+    });
+
+    // Tool-use loop: Anthropic returns stop_reason="tool_use" when it wants
+    // one or more tools run. We execute them, append the assistant + user
+    // (tool_result) turns, and call again until stop_reason is terminal.
+    const MAX_TOOL_ITERATIONS = 6;
+    let iterations = 0;
+    while (response.stop_reason === "tool_use" && iterations < MAX_TOOL_ITERATIONS) {
+      iterations++;
+
+      // Capture any text Claude emitted in the same turn as the tool_use —
+      // save_quote_job needs it for the conversation log.
+      state.currentAssistantText = response.content
+        .filter(b => b.type === "text")
+        .map(b => b.text)
+        .join(" ");
+
+      // Append the assistant turn verbatim (includes both text and tool_use
+      // blocks — Anthropic requires the full content array to match the
+      // tool_use_id in the follow-up tool_result).
+      workingMessages.push({ role: "assistant", content: response.content });
+
       const toolResults = [];
-      for (const toolCall of assistantMessage.tool_calls) {
-        let args = {}; try { args = JSON.parse(toolCall.function.arguments); } catch {}
-        let result = {};
-
-        if (toolCall.function.name === "upsert_client") {
-          const r = await upsertClient(args, clientId); if (r.clientId) clientId = r.clientId; result = r;
-        } else if (toolCall.function.name === "save_quote_job") {
-          if (!clientId) { const r = await upsertClient({ firstName: formData.firstName || "Unknown", phone: formData.phone, address: formData.address }, null); if (r.clientId) clientId = r.clientId; }
-          if (clientId) { const convoLog = JSON.stringify([...messages, { role: "assistant", content: assistantMessage.content || "" }]); const r = await createJob(clientId, args, convoLog); if (r.jobId) { jobId = r.jobId; quoteJustSent = true; } result = r; }
-          else result = { error: "No clientId available" };
-        } else if (toolCall.function.name === "lookup_property") {
-          result = await lookupProperty(args.address);
-        } else if (toolCall.function.name === "check_calendar_availability") {
-          result = await checkCalendarAvailability(args.weeksAhead);
-        } else if (toolCall.function.name === "book_appointment") {
-          result = await bookAppointment(args);
-        } else if (toolCall.function.name === "confirm_booking") {
-          if (jobId) { result = await updateJob(jobId, { "Booking date": args.bookingDate, "Lead status": "Booked" }); if (clientId && args.customerConfirmText) await logConversation({ clientId, jobId, direction: "Inbound", author: "Customer", message: args.customerConfirmText, intent: "booking_confirmed" }); }
-          else result = { error: "No jobId" };
-        } else result = { error: "Unknown tool" };
-
-        toolResults.push({ role: "tool", tool_call_id: toolCall.id, content: JSON.stringify(result) });
+      for (const block of response.content) {
+        if (block.type !== "tool_use") continue;
+        // Anthropic tool input is already parsed JSON (unlike OpenAI's
+        // arguments string). Fall back to {} if somehow missing.
+        const args = block.input || {};
+        let result;
+        try {
+          result = await runTool(block.name, args, state, formData, messages);
+        } catch (err) {
+          console.error(`[estimate] tool ${block.name} threw:`, err);
+          result = { error: err.message || "Tool execution failed" };
+        }
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: JSON.stringify(result),
+        });
       }
-      const finalResponse = await openai.chat.completions.create({ model: "gpt-4o-mini", max_tokens: 600, messages: [{ role: "system", content: systemPrompt }, ...messages, assistantMessage, ...toolResults] });
-      assistantMessage = finalResponse.choices[0].message;
+
+      workingMessages.push({ role: "user", content: toolResults });
+
+      response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 1024,
+        system: systemBlocks,
+        tools,
+        messages: workingMessages,
+      });
+
+      console.log("[estimate] anthropic follow-up usage", {
+        input:       response.usage?.input_tokens,
+        output:      response.usage?.output_tokens,
+        cacheRead:   response.usage?.cache_read_input_tokens,
+        stop_reason: response.stop_reason,
+      });
     }
 
-    const replyText = assistantMessage.content || "";
-    if (clientId && latestUserMessage) logConversation({ clientId, jobId, direction: "Inbound",  author: "Customer", message: latestUserMessage }).catch(() => {});
-    if (clientId && replyText)        logConversation({ clientId, jobId, direction: "Outbound", author: "AI bot",   message: replyText, intent: quoteJustSent ? "quote_sent" : undefined }).catch(() => {});
-    if (jobId && !quoteJustSent)      updateJob(jobId, { "Conversation log": JSON.stringify([...messages, { role: "assistant", content: replyText }]) }).catch(() => {});
+    // Extract the customer-facing text from the final response.
+    const replyText = response.content
+      .filter(b => b.type === "text")
+      .map(b => b.text)
+      .join("\n")
+      .trim();
 
-    return res.status(200).json({ reply: replyText, clientId: clientId || null, jobId: jobId || null, quoteJustSent });
+    if (state.clientId && latestUserMessage) logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Inbound",  author: "Customer", message: latestUserMessage }).catch(() => {});
+    if (state.clientId && replyText)         logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Outbound", author: "AI bot",   message: replyText, intent: state.quoteJustSent ? "quote_sent" : undefined }).catch(() => {});
+    if (state.jobId && !state.quoteJustSent) updateJob(state.jobId, { "Conversation log": JSON.stringify([...messages, { role: "assistant", content: replyText }]) }).catch(() => {});
+
+    return res.status(200).json({
+      reply:         replyText,
+      clientId:      state.clientId || null,
+      jobId:         state.jobId    || null,
+      quoteJustSent: state.quoteJustSent,
+    });
   } catch (err) {
     console.error("Estimate handler error:", err);
     return res.status(500).json({ error: "Something went wrong. Please try again." });
