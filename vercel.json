@@ -8,6 +8,9 @@
     },
     "api/biz-report.js": {
       "maxDuration": 30
+    },
+    "api/sms.js": {
+      "maxDuration": 10
     }
   },
   "crons": [
