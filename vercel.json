@@ -5,6 +5,15 @@
     },
     "api/estimate.js": {
       "maxDuration": 30
+    },
+    "api/biz-report.js": {
+      "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/biz-report",
+      "schedule": "0 0 */2 * *"
+    }
+  ]
 }
