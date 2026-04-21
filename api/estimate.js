@@ -252,7 +252,9 @@ in order: house → deck → patio → fence → gutters → driveway.
 CUSTOMER-NOTES HANDLING (CRITICAL):
 The customer notes above often contain pricing-impacting details.
 Scan the notes for keywords and apply the matching rule BEFORE quoting:
-- "one side" / "single side" / "just the front" / "just the back" → partial house wash. Apply PARTIAL SIDES rule from the pricing section (2 of 4 sides = 50%, 3 of 4 sides = 75%). For fence, one-side pricing is already the default.
+- "one side" / "1 side" / "single side" / "just the front" / "just the back" → partial house wash, apply PARTIAL SIDES MATH below.
+- "two sides" / "2 sides" / "front and back" / "the two sides facing X" → partial house wash at 2 of 4 sides.
+- "three sides" / "3 sides" / "row home" (if they mention it) → partial house wash at 3 of 4 sides.
 - "both sides" (on a fence) → double the fence base price.
 - "half" / "only the ___" → partial pricing based on what they specified.
 - "add windows" / "do windows" → add window pricing on top.
@@ -260,6 +262,26 @@ Scan the notes for keywords and apply the matching rule BEFORE quoting:
 - Access/logistics words ("gate code", "pets", "no water", "dogs out") → acknowledge once, no price change, save to Job.concerns.
 Acknowledge the relevant note in your quote reveal, e.g.
 "Since you mentioned just the front side, I priced it as a partial wash — your estimated price is $X–$Y."
+
+PARTIAL SIDES MATH (mandatory calculation order):
+A standard 4-sided home uses these fractions:
+  • 1 of 4 sides = 25% of full price
+  • 2 of 4 sides = 50% of full price
+  • 3 of 4 sides = 75% of full price
+  • 4 of 4 sides = 100% (full)
+A 3-sided attached/row home uses:
+  • 1 of 3 sides = 33%
+  • 2 of 3 sides = 67%
+  • 3 of 3 sides = 100%
+
+HOW TO CALCULATE — do this silently, never show the math to the customer:
+1) First pick the FULL house price from the sqft × stories × clean/dirty table (same as if they wanted the whole house).
+2) Multiply both ends of that range by the fraction above.
+3) Round to the nearest $10 for a clean number.
+4) Apply the $50 range rule on top of the low end.
+5) If the low end is under $120, invoke the $120 minimum fee instead of showing the calculated range.
+
+Worked example: 2-story, 2300 sqft, clean home → full price $390–450. Customer wants just 1 of 4 sides → 25% → $97.50–112.50 → round to $100–110 → add $50 range → low end $100 is under $120 → invoke minimum fee ($120 flat).
 
 QUOTE REVEAL FORMAT:
 After calculating, say exactly:
@@ -322,7 +344,7 @@ Trailer: single $150–200, double $190–240.
 1-Story: 1000–1500→$210–260 | 1500–1750→$230–280/$250–300 | 1750–2000→$260–310/$280–330 | 2000–2300→$300–350/$330–380 | 2300–2600→$330–390/$380–430 | 2600–3000→$390–430/$420–470 | 3000–3500→$430–480/$460–510 | 3500–4000→$450–500/$550
 2-Story (3-sided attached = price as 3 sides): 1000–1500→$210–260 | 1500–1750→$260–310/$280–330 | 1750–2000→$320–370/$340–390 | 2000–2300→$360–420/$390–440 | 2300–2600→$390–450/$430–480 | 2600–3000→$420–470(+$50 dirty) | 3000–3500→$450–500/$470–520 | 3500–4000→$450–580/$480–580(human review) | 4000–5000→$500–650/$600+(human review) | 5000+→$700–900(human review)
 3-Story (ask 3 or 4 sides): 2400–2600→$360–420/$400–450 | 2600–3000→$440–490/$470–520 | 3000–3500→$490–540/$460–510 | 3500–4000→$530–600/$600–680(human review) | 4000–5000→$500–650(human review) | 5000+→$700–900(human review)
-Partial sides: 4-sided home, 2 sides = 50% price, 3 sides = 75%.
+Partial sides: 4-sided home → 1 side = 25% / 2 sides = 50% / 3 sides = 75% / 4 sides = 100%. 3-sided attached → 1 = 33% / 2 = 67% / 3 = 100%. See PARTIAL SIDES MATH block above for calculation order.
 Add-ons: Chimney brick/stucco +$100 | Chimney vinyl +$30 | Sloped side +$30 | Dormer 1st story +$20, 2nd story +$30 | Porch ground = patio pricing −25% (free <100sqft) | Screens free ≤10, $20–50 more | Windows (if asked) $5/window, $10 second story | Small front step free
 
 DECK (per sqft): Wood $0.50 | Composite/Trex $0.46 | Vinyl/PVC $0.40 | +$0.02 really dirty | +$0.02 old/chipping | Steps $4 vinyl/$6 wood-composite | Railings $3/ft wood, $0.80/ft vinyl
