@@ -169,6 +169,163 @@ async function bookAppointment(data) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ─── Telegram notifications ──────────────────────────────────────────────────
+// Fires on save_quote_job (progressive summary — each new service triggers a
+// refreshed message with all quotes so far) and on confirm_booking.
+// Silently skips if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars aren't set.
+
+async function sendTelegramNotification(text) {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+    console.log("[telegram] not configured, skipping");
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_CHAT_ID,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    });
+    const data = await res.json();
+    if (!data.ok) console.log("[telegram] send error:", data);
+  } catch (err) {
+    console.error("[telegram] send threw:", err);
+  }
+}
+
+// Airtable linked-record fields store an array of record IDs. SEARCH on
+// ARRAYJOIN flattens the array into a string we can substring-match.
+async function getJobsForClient(clientId) {
+  try {
+    if (!clientId) return [];
+    const formula = `SEARCH('${clientId}', ARRAYJOIN({Client}))`;
+    const url = `${airtableUrl(AT_JOBS)}?filterByFormula=${encodeURIComponent(formula)}&sort%5B0%5D%5Bfield%5D=Quote%20date&sort%5B0%5D%5Bdirection%5D=asc`;
+    const res = await fetch(url, { headers: airtableHeaders() });
+    const data = await res.json();
+    return data.records || [];
+  } catch (err) {
+    console.error("getJobsForClient error:", err);
+    return [];
+  }
+}
+
+// "2026-06-05" → "June 5"
+function prettyDate(yyyyMmDd) {
+  if (!yyyyMmDd) return yyyyMmDd;
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const [y, m, d] = yyyyMmDd.split("-").map(n => parseInt(n, 10));
+  if (!y || !m || !d) return yyyyMmDd;
+  return `${months[m - 1]} ${d}`;
+}
+
+function htmlEscape(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Parse a quote string like "$126–176" or "$120" into { low, high }.
+function parseQuoteRange(quoteStr) {
+  if (!quoteStr) return null;
+  // Handle various dash chars: - – — and spaces around them
+  const m = String(quoteStr).match(/\$\s*([0-9]+)(?:\s*[-–—]\s*\$?\s*([0-9]+))?/);
+  if (!m) return null;
+  const low = parseInt(m[1], 10);
+  const high = m[2] ? parseInt(m[2], 10) : low;
+  return { low, high };
+}
+
+async function notifyQuote(state, formData) {
+  try {
+    const jobs = await getJobsForClient(state.clientId);
+    if (jobs.length === 0) return;
+
+    const firstName = formData.firstName || "Customer";
+    const phone     = formData.phone     || "no phone";
+    const address   = formData.address   || "no address";
+    const notes     = (formData.notes && formData.notes.trim()) ? formData.notes.trim() : null;
+
+    // Build per-service lines, totals, and check for booking.
+    const lines = [];
+    let lowTotal = 0, highTotal = 0;
+    let bookedDate = null;
+    for (const j of jobs) {
+      const svc = j.fields["Service type"] || "service";
+      const q   = j.fields["Quote"] || "?";
+      lines.push(`• ${svc}: ${q}`);
+      const r = parseQuoteRange(q);
+      if (r) { lowTotal += r.low; highTotal += r.high; }
+      if (j.fields["Booking date"]) bookedDate = j.fields["Booking date"];
+    }
+    const totalStr = lowTotal === 0 ? "—" : (lowTotal === highTotal ? `$${lowTotal}` : `$${lowTotal}–$${highTotal}`);
+
+    // If no date yet, pull two availability suggestions for the draft text.
+    let datePhrase;
+    if (bookedDate) {
+      datePhrase = `We're all set for ${prettyDate(bookedDate)}.`;
+    } else {
+      const cal = await checkCalendarAvailability(3);
+      const dates = cal && Array.isArray(cal.availableDates) ? cal.availableDates : [];
+      if (dates.length >= 2) {
+        datePhrase = `I've got ${prettyDate(dates[0])} or ${prettyDate(dates[1])} open — which works better?`;
+      } else if (dates.length === 1) {
+        datePhrase = `I've got ${prettyDate(dates[0])} open — does that work?`;
+      } else {
+        datePhrase = `What day works best for you?`;
+      }
+    }
+
+    // Draft text for Luke to copy/paste to the customer.
+    const draftLines = [
+      `Hi ${firstName}, this is Luke from LP Pressure Wash. I reviewed your estimate — here's the final price:`,
+      "",
+      ...lines,
+      `• Total: ${totalStr}`,
+      "",
+      `${datePhrase} If you have any further questions feel free to give me a call or text here. Let me know!`,
+    ];
+    const draftText = draftLines.join("\n");
+
+    // Build the Telegram-side summary (what Luke sees in his app).
+    const msgParts = [
+      `💰 <b>New quote — ${htmlEscape(firstName)}</b>`,
+      `📞 ${htmlEscape(phone)}`,
+      `📍 ${htmlEscape(address)}`,
+    ];
+    if (notes) msgParts.push(`📝 <i>${htmlEscape(notes)}</i>`);
+    msgParts.push("");
+    msgParts.push(...lines.map(htmlEscape));
+    msgParts.push(`<b>Total: ${htmlEscape(totalStr)}</b>`);
+    msgParts.push("");
+    msgParts.push(`<b>📱 Draft text to send ${htmlEscape(firstName)}:</b>`);
+    msgParts.push("");
+    msgParts.push(`<pre>${htmlEscape(draftText)}</pre>`);
+
+    await sendTelegramNotification(msgParts.join("\n"));
+  } catch (err) {
+    console.error("[notifyQuote] error:", err);
+  }
+}
+
+async function notifyBooking(state, formData, bookingDate) {
+  try {
+    const firstName = formData.firstName || "Customer";
+    const phone     = formData.phone     || "no phone";
+    const msg = [
+      `✅ <b>BOOKED — ${htmlEscape(firstName)}</b>`,
+      `📞 ${htmlEscape(phone)}`,
+      `📅 ${htmlEscape(prettyDate(bookingDate))}`,
+      ``,
+      `Check your Google Calendar for the appointment details.`,
+    ].join("\n");
+    await sendTelegramNotification(msg);
+  } catch (err) {
+    console.error("[notifyBooking] error:", err);
+  }
+}
+
 // ─── System prompt ────────────────────────────────────────────────────────────
 // STATIC_SYSTEM_PROMPT holds every rule / pricing table / flow that never
 // changes between customers. It's cached via cache_control so repeat traffic
@@ -428,7 +585,12 @@ async function runTool(name, args, state, formData, originalMessages) {
     if (state.clientId) {
       const convoLog = JSON.stringify([...originalMessages, { role: "assistant", content: state.currentAssistantText || "" }]);
       const r = await createJob(state.clientId, args, convoLog);
-      if (r.jobId) { state.jobId = r.jobId; state.quoteJustSent = true; }
+      if (r.jobId) {
+        state.jobId = r.jobId;
+        state.quoteJustSent = true;
+        // Fire-and-forget Telegram notification so the AI isn't blocked.
+        notifyQuote(state, formData).catch(err => console.error("[notifyQuote] fire-and-forget error:", err));
+      }
       return r;
     }
     return { error: "No clientId available" };
@@ -442,6 +604,8 @@ async function runTool(name, args, state, formData, originalMessages) {
     if (state.clientId && args.customerConfirmText) {
       await logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Inbound", author: "Customer", message: args.customerConfirmText, intent: "booking_confirmed" });
     }
+    // Fire-and-forget booking notification.
+    notifyBooking(state, formData, args.bookingDate).catch(err => console.error("[notifyBooking] fire-and-forget error:", err));
     return r;
   }
   return { error: "Unknown tool" };
