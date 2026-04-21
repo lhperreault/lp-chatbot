@@ -331,7 +331,7 @@ DECK (per sqft): Wood $0.50 | Composite/Trex $0.46 | Vinyl/PVC $0.40 | +$0.02 re
 
 PATIO (per sqft): Concrete $0.38 | Pavers/Brick $0.42 | Slab $0.46 | +$0.04 really dirty | +5% poor drainage
 
-FENCE (per linear ft, one side): Vinyl/Metal $1.30 | Wood gaps $0.90 | Solid wood $2.00 | +$0.10 really dirty | Both sides = double
+FENCE (per linear ft, one side): Vinyl/Metal $1.28 | Wood gaps $0.90 | Solid wood $1.98 | +$0.10 really dirty | Both sides = double
 
 DRIVEWAY: $0.38/sqft (same as concrete). Min $120.
 
