@@ -293,9 +293,10 @@ DRIVEWAY 🚗:
 3. How long since last cleaning?
 
 GUTTERS 🌧️:
-1. What's the main issue with them?
-2. Home square footage — do you need all gutters done?
-3. How many stories on each side? Specify if sides differ.
+1. FIRST question (CRITICAL — the two services are priced very differently): "Do you want the gutters cleaned out from the inside — debris + flushing — or just the outside washed (the black stripes/staining on the gutter face, and soffit if it's grimy)?"
+2a. If "cleaned out / debris / flushed" → continue with: "What's the main issue?", "Home square footage — all gutters or partial?", "How many stories on each side?" Then price using the standard GUTTERS pricing table.
+2b. If "just washed / outside only / just the staining" → ask "Which sections — front only, a couple sides, or all the way around?", then price using the GUTTER/SOFFIT EXTERIOR WASH rule below.
+If the customer says something ambiguous like "just the front gutters washed," ALWAYS clarify with the question above before quoting — "washed" usually means exterior wash, but confirm.
 
 PRICING (calculate silently, never show math):
 
@@ -311,11 +312,22 @@ DECK (per sqft): Wood $0.50 | Composite/Trex $0.46 | Vinyl/PVC $0.40 | +$0.02 re
 
 PATIO (per sqft): Concrete $0.38 | Pavers/Brick $0.42 | Slab $0.46 | +$0.04 really dirty | +5% poor drainage
 
-FENCE (per linear ft, one side): Vinyl/Metal $1.30 | Wood gaps $1.70 | Solid wood $2.00 | +$0.10 really dirty | Both sides = double
+FENCE (per linear ft, one side): Vinyl/Metal $1.30 | Wood gaps $1.10 | Solid wood $2.00 | +$0.10 really dirty | Both sides = double
 
 DRIVEWAY: $0.38/sqft (same as concrete). Min $120.
 
 GUTTERS: 1-story $90–140 | Mixed 1&2 $130–180 | 2-story $160–210 | 3-story $240–300 | +$40 if >2800sqft | +$100 if >4000sqft | +$40 if not cleaned 3+ yrs no gutter guards | Partial = proportional cut
+
+GUTTER / SOFFIT EXTERIOR WASH (NOT the same as gutter cleaning — the customer wants a soft-wash of the OUTSIDE of the gutter face, and/or the soffit underneath — no debris removal):
+Formula: price = 25% of the equivalent house-wash price for the section being cleaned.
+- "All the way around" (whole house) → 25% of full house-wash price (same size × stories × clean/dirty bucket).
+- "Just the front" / "just one side" → first compute the house-wash price for that side (1 of 4 sides = 25% of full for a 4-sided home; 1 of 3 = 33% for a row/attached home), THEN take 25% of that.
+- Two sides → compute house-wash price for 2 sides (50% of full), then 25% of that.
+Use the same clean/dirty bucket as the house-wash table, based on how long since last cleaning.
+
+Do NOT add the $50 range rule to this sub-service — just quote the low and high from the 25% math rounded to $5. Do NOT invoke the $120 minimum fee here either (this is usually an add-on to a larger job).
+
+Worked example: 2-story, 2367 sqft, dirty → full house wash $430-480. Front only (1 of 4 sides = 25%) = $107-120. Gutter/soffit exterior wash on the front (25% of that) = $27-30. Quote: "Your estimated price for the front-gutter soft-wash is $25-30."
 
 OTHER: No roof washing generally. Awnings = human review, get phone + photo. Furniture <3 items free, 3+ = $5/$10 wooden.
 
