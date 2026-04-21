@@ -186,7 +186,7 @@ CORE RULES:
 - Quote range: always add $50 to calculated price (e.g. $310 calculated = "$310–$360"). Never explain the math.
 - MINIMUM FEE: If calculated price < $120, say "We have a $120 minimum visit fee — would you like to add another service?" Never show sub-$120 quote.
 - Phone is already captured in CUSTOMER CONTEXT (appears below this prompt). Do NOT ask for it again. You may confirm if helpful.
-- AIRTABLE: Call upsert_client on your very first turn with name + phone + address. Call save_quote_job immediately when you reveal a price. Call confirm_booking when customer locks in a date.
+- AIRTABLE: The customer's name/phone/address have already been saved to Airtable server-side — do NOT call upsert_client unless you learn additional info (email, full name, etc.). Call save_quote_job immediately when you reveal a price. Call confirm_booking when customer locks in a date.
 - Booking: Only check calendar when customer explicitly asks to schedule. Season starts May 16, 2026 (Luke and his brother are finishing college — keep it casual).
 - Bundle: 30% off second/third service when bundled with house wash. Mention discount applied on final team review.
 - Veterans/Seniors: 10% off, only if customer asks. Does not stack.
@@ -480,6 +480,29 @@ export default async function handler(req, res) {
     ? [kickoff, ...messages]
     : [...messages];
 
+  // Accumulates customer-facing text across every turn of the tool-use loop.
+  // Claude often emits a brief "Got it, checking…" text alongside its first
+  // tool_use block, then more text on the follow-up after tool results come
+  // back — we want both. Previously we only took text from the *final*
+  // response, which dropped the greeting when the AI called upsert_client
+  // on turn 1 and went silent on turn 2.
+  const textParts = [];
+  function captureText(resp, label) {
+    const t = resp.content
+      .filter(b => b.type === "text")
+      .map(b => b.text)
+      .join(" ")
+      .trim();
+    console.log(`[estimate] ${label} content`, {
+      stop_reason: resp.stop_reason,
+      blocks: resp.content.map(b => b.type === "tool_use" ? `tool_use:${b.name}` : b.type),
+      textLen: t.length,
+      textPreview: t.slice(0, 120),
+    });
+    if (t) textParts.push(t);
+    return t;
+  }
+
   try {
     let response = await client.messages.create({
       model: MODEL,
@@ -497,6 +520,8 @@ export default async function handler(req, res) {
       stop_reason:  response.stop_reason,
     });
 
+    captureText(response, "turn-1");
+
     // Tool-use loop: Anthropic returns stop_reason="tool_use" when it wants
     // one or more tools run. We execute them, append the assistant + user
     // (tool_result) turns, and call again until stop_reason is terminal.
@@ -505,12 +530,8 @@ export default async function handler(req, res) {
     while (response.stop_reason === "tool_use" && iterations < MAX_TOOL_ITERATIONS) {
       iterations++;
 
-      // Capture any text Claude emitted in the same turn as the tool_use —
-      // save_quote_job needs it for the conversation log.
-      state.currentAssistantText = response.content
-        .filter(b => b.type === "text")
-        .map(b => b.text)
-        .join(" ");
+      // Keep save_quote_job's conversation-log feature working.
+      state.currentAssistantText = textParts.join(" ");
 
       // Append the assistant turn verbatim (includes both text and tool_use
       // blocks — Anthropic requires the full content array to match the
@@ -548,19 +569,25 @@ export default async function handler(req, res) {
       });
 
       console.log("[estimate] anthropic follow-up usage", {
+        iter:        iterations,
         input:       response.usage?.input_tokens,
         output:      response.usage?.output_tokens,
         cacheRead:   response.usage?.cache_read_input_tokens,
         stop_reason: response.stop_reason,
       });
+
+      captureText(response, `turn-${iterations + 1}`);
     }
 
-    // Extract the customer-facing text from the final response.
-    const replyText = response.content
-      .filter(b => b.type === "text")
-      .map(b => b.text)
-      .join("\n")
-      .trim();
+    // Join accumulated text; fall back to a safe greeting if the AI emitted
+    // nothing customer-facing (rare, but don't let the widget see a blank
+    // bubble and silently fail).
+    let replyText = textParts.join("\n\n").trim();
+    if (!replyText) {
+      console.warn("[estimate] empty replyText after loop; using fallback");
+      const fname = formData.firstName || "there";
+      replyText = `Hey ${fname}! 👋 Thanks for filling out the form — what's the best way for me to help you today?`;
+    }
 
     if (state.clientId && latestUserMessage) logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Inbound",  author: "Customer", message: latestUserMessage }).catch(() => {});
     if (state.clientId && replyText)         logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Outbound", author: "AI bot",   message: replyText, intent: state.quoteJustSent ? "quote_sent" : undefined }).catch(() => {});
