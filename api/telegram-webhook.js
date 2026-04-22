@@ -10,6 +10,7 @@
 
 const AT_BASE        = process.env.AIRTABLE_BASE_ID;
 const AT_KEY         = process.env.AIRTABLE_API_KEY;
+const AT_CLIENTS       = "Clients";
 const AT_CONVERSATIONS = "Conversations";
 const AT_EDIT_LOG    = "Edit Log";
 
@@ -68,6 +69,94 @@ async function createEditLogRow(fields) {
     });
     return res.json();
   } catch (err) { console.error("[tg-webhook] edit log create error:", err); return null; }
+}
+
+// ─── Phone + client helpers (for /text + contact imports) ─────────────
+function parsePhoneToE164(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10)                         return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  // Already international-ish (e.g. 44xxxxxxxxxx) — just add +
+  return `+${digits}`;
+}
+
+async function findClientByPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  const last10 = digits.slice(-10);
+  if (last10.length !== 10) return null;
+  const formula = `FIND('${last10}', REGEX_REPLACE({Phone} & '', '[^0-9]', ''))`;
+  const url     = `${atUrl(AT_CLIENTS)}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`;
+  try {
+    const res  = await fetch(url, { headers: atHeaders() });
+    const data = await res.json();
+    return data.records?.[0] || null;
+  } catch (err) {
+    console.error("[tg-webhook] findClientByPhone error:", err);
+    return null;
+  }
+}
+
+// Upsert a client row by phone. If name is provided and the existing row
+// has no Name (or Name === "Unknown"), patch it in. Returns the record id.
+async function upsertClientByPhone(phone, name) {
+  const existing = await findClientByPhone(phone);
+  if (existing) {
+    const existingName = (existing.fields?.Name || "").trim();
+    const shouldUpdateName = name && (!existingName || existingName.toLowerCase() === "unknown");
+    if (shouldUpdateName) {
+      try {
+        await fetch(`${atUrl(AT_CLIENTS)}/${existing.id}`, {
+          method: "PATCH",
+          headers: atHeaders(),
+          body: JSON.stringify({ fields: { Name: name }, typecast: true }),
+        });
+      } catch (err) { console.error("[tg-webhook] client name patch error:", err); }
+    }
+    return { id: existing.id, wasExisting: true, previousName: existingName };
+  }
+  try {
+    const res = await fetch(atUrl(AT_CLIENTS), {
+      method: "POST",
+      headers: atHeaders(),
+      body: JSON.stringify({
+        fields: {
+          Name:   name || "Unknown",
+          Phone:  phone,
+          Source: "Telegram",
+        },
+        typecast: true,
+      }),
+    });
+    const data = await res.json();
+    if (data?.id) return { id: data.id, wasExisting: false, previousName: null };
+  } catch (err) { console.error("[tg-webhook] client create error:", err); }
+  return null;
+}
+
+async function createOutboundConversation(clientId, bodyText) {
+  try {
+    const res = await fetch(atUrl(AT_CONVERSATIONS), {
+      method: "POST",
+      headers: atHeaders(),
+      body: JSON.stringify({
+        fields: {
+          Client:        clientId ? [clientId] : undefined,
+          Direction:     "outbound",
+          Status:        "sent",
+          Channel:       "SMS",
+          Message:       bodyText,
+          Final_Message: bodyText,
+          Sent_At:       new Date().toISOString(),
+        },
+        typecast: true,
+      }),
+    });
+    return res.json();
+  } catch (err) {
+    console.error("[tg-webhook] outbound conv log error:", err);
+    return null;
+  }
 }
 
 // ─── Twilio outbound SMS ───────────────────────────────────────────────
@@ -261,6 +350,112 @@ async function handleEditReply(msg) {
   await tgSend({ text: `✅ <i>Sent your edited version to ${htmlEscape(to)}.</i>` });
 }
 
+// ─── /text command: Luke initiates an outbound SMS to any number ──────
+// Format: /text +12155551234 Your message here
+// If the number isn't in Airtable yet, a stub Client row is created.
+// Message is sent immediately — no approval loop (Luke wrote it himself).
+async function handleTextCommand(msg) {
+  const text = (msg.text || "").trim();
+  // First whitespace-separated token after "/text" = phone; rest = message
+  const match = text.match(/^\/text\s+(\S+)\s+([\s\S]+)$/);
+  if (!match) {
+    await tgSend({
+      text: `⚠️ <b>Usage</b>\n<code>/text +12155551234 Your message here</code>\n\nPhone can be 10 digits, +1 formatted, or any E.164 number (no spaces in the phone portion).`,
+    });
+    return;
+  }
+  const phoneRaw = match[1];
+  const bodyText = match[2].trim();
+  const phone    = parsePhoneToE164(phoneRaw);
+  if (!phone || !bodyText) {
+    await tgSend({ text: "⚠️ Couldn't parse phone or message body." });
+    return;
+  }
+
+  // Upsert the client (creates stub if new)
+  const clientResult = await upsertClientByPhone(phone, null);
+  const clientId     = clientResult?.id || null;
+  const wasExisting  = !!clientResult?.wasExisting;
+  const existingName = clientResult?.previousName || null;
+
+  // Fire the SMS
+  try {
+    await sendTwilioSms(phone, bodyText);
+  } catch (err) {
+    console.error("[tg-webhook] outbound /text send failed:", err);
+    await tgSend({
+      text: `⚠️ <b>Twilio send FAILED</b> to <code>${htmlEscape(phone)}</code>\n<code>${htmlEscape(err.message || "unknown error")}</code>`,
+    });
+    return;
+  }
+
+  // Log it to Conversations so it shows up in history on the next inbound
+  await createOutboundConversation(clientId, bodyText);
+
+  const who = wasExisting
+    ? (existingName ? `<b>${htmlEscape(existingName)}</b> ` : "existing client ")
+    : "<i>new client (stub created in Airtable)</i> ";
+  await tgSend({
+    text: `✅ Sent to ${who}<code>${htmlEscape(phone)}</code>\n<pre>${htmlEscape(bodyText)}</pre>`,
+  });
+}
+
+// ─── Shared contact card: auto-import into Airtable Clients ───────────
+// Fires when Luke taps 📎 → Contact → picks someone from his phone.
+async function handleContactShared(msg) {
+  const c = msg.contact;
+  if (!c || !c.phone_number) {
+    await tgSend({ text: "⚠️ That contact had no phone number." });
+    return;
+  }
+  const phone = parsePhoneToE164(c.phone_number);
+  const first = (c.first_name || "").trim();
+  const last  = (c.last_name  || "").trim();
+  const name  = [first, last].filter(Boolean).join(" ").trim() || null;
+  if (!phone) {
+    await tgSend({ text: "⚠️ Couldn't parse that contact's phone number." });
+    return;
+  }
+
+  const result = await upsertClientByPhone(phone, name);
+  if (!result?.id) {
+    await tgSend({ text: "⚠️ Couldn't save that contact to Airtable." });
+    return;
+  }
+
+  const label = name || "Unknown";
+  if (result.wasExisting) {
+    const wasEmpty = !result.previousName || result.previousName.toLowerCase() === "unknown";
+    const verb = wasEmpty && name ? "Updated name on existing client" : "Already in Airtable";
+    await tgSend({
+      text: `✅ <b>${verb}</b>: ${htmlEscape(label)} <code>${htmlEscape(phone)}</code>`,
+    });
+  } else {
+    await tgSend({
+      text: `✅ <b>Added to Airtable</b>: ${htmlEscape(label)} <code>${htmlEscape(phone)}</code>\n<i>You can now /text them and they'll be recognized on reply.</i>`,
+    });
+  }
+}
+
+// ─── /help: cheat-sheet ───────────────────────────────────────────────
+async function handleHelp() {
+  await tgSend({
+    text:
+`<b>LP bot commands</b>
+
+<code>/text +12155551234 your message</code>
+Text a customer directly. Creates/matches the Client in Airtable and logs the outbound SMS.
+
+<code>/help</code>
+This menu.
+
+<b>Tricks</b>
+• 📎 → <b>Contact</b> → pick someone from your phone → I'll auto-add them to Airtable Clients.
+• Reply to any ✏️ <i>Edit</i> prompt with your rewrite to override the Haiku draft.
+• Tap ✅ / ✏️ / ❌ on inbound SMS alerts.`,
+  });
+}
+
 // ─── Handler ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(200).send("ok"); // Telegram health checks
@@ -275,6 +470,13 @@ export default async function handler(req, res) {
   try {
     if (update.callback_query) {
       await handleCallbackQuery(update.callback_query);
+    } else if (update.message?.contact) {
+      // Shared contact card → add/update in Airtable
+      await handleContactShared(update.message);
+    } else if (typeof update.message?.text === "string" && /^\/text(\s|$)/.test(update.message.text)) {
+      await handleTextCommand(update.message);
+    } else if (typeof update.message?.text === "string" && /^\/help(\s|$)/.test(update.message.text)) {
+      await handleHelp();
     } else if (update.message && update.message.reply_to_message) {
       await handleEditReply(update.message);
     }
