@@ -88,7 +88,11 @@ async function sendTwilioSms(to, bodyText) {
     body: form.toString(),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(`Twilio error: ${data.message || res.status}`);
+  if (!res.ok) {
+    const code = data.code ? ` (code ${data.code})` : "";
+    const more = data.more_info ? ` — ${data.more_info}` : "";
+    throw new Error(`Twilio error${code}: ${data.message || res.status}${more}`);
+  }
   return data;
 }
 
@@ -127,9 +131,10 @@ async function handleCallbackQuery(cb) {
     } catch (err) {
       console.error("[tg-webhook] Twilio send failed:", err);
       await tgAnswerCb(cb.id, "Twilio send failed");
+      const detail = htmlEscape((err && err.message) || "unknown error");
       await tgEdit({
         message_id: msgId,
-        text: `${cb.message.text}\n\n⚠️ <b>Twilio send FAILED</b> — check logs. Customer did NOT receive this.`,
+        text: `${htmlEscape(cb.message.text || "")}\n\n⚠️ <b>Twilio send FAILED</b>\n<code>${detail}</code>\n\n<i>Customer did NOT receive this.</i>`,
       });
       return;
     }
