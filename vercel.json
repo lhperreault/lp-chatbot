@@ -10,7 +10,10 @@
       "maxDuration": 30
     },
     "api/sms.js": {
-      "maxDuration": 10
+      "maxDuration": 30
+    },
+    "api/telegram-webhook.js": {
+      "maxDuration": 15
     }
   },
   "crons": [
