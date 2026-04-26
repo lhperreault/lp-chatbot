@@ -632,7 +632,7 @@ Contact: LP Pressure Washing | lhppressurewashing@gmail.com | (267) 912-8285`;
 // Dynamic per-request text. Placed AFTER the cached block so it doesn't
 // invalidate the prefix.
 function buildDynamicContext(formData, propertyData) {
-  const { firstName, phone, address, services, condition, notes } = formData;
+  const { firstName, phone, email, address, services, condition, notes } = formData;
   const svcList = Array.isArray(services) ? services.join(", ") : (services || "");
   const notesLine = (notes && notes.trim()) ? notes.trim() : "none";
 
@@ -669,6 +669,7 @@ Greet warmly by first name (e.g. "Hey ${firstName}! 👋"), confirm what they se
   return `CUSTOMER CONTEXT — already collected. Do NOT ask for these again:
 Name: ${firstName}
 Phone: ${phone}
+Email: ${email || "not provided"}
 Address: ${address || "not provided"}
 Services requested: ${svcList}
 General condition: ${condition || "not yet provided — ask during qualification"}
@@ -698,7 +699,7 @@ async function runTool(name, args, state, formData, originalMessages) {
   }
   if (name === "save_quote_job") {
     if (!state.clientId) {
-      const r = await upsertClient({ firstName: formData.firstName || "Unknown", phone: formData.phone, address: formData.address }, null);
+      const r = await upsertClient({ firstName: formData.firstName || "Unknown", phone: formData.phone, email: formData.email, address: formData.address }, null);
       if (r.clientId) state.clientId = r.clientId;
     }
     if (state.clientId) {

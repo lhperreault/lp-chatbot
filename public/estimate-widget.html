@@ -400,12 +400,125 @@
   -webkit-text-fill-color: #6ee7b7 !important;
   font-weight: 700;
 }
+
+/* Ambassador portrait (Luke + brother) — drop a real URL into
+   --lp-hero-portrait to enable. Defaults to a translucent placeholder
+   tile so the layout reads clean even before a photo is added. */
+#lpWrap .lp-hero-portrait {
+  --lp-hero-portrait: linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.04));
+  position: absolute;
+  bottom: 22px;
+  right: 22px;
+  width: 96px;
+  height: 96px;
+  border-radius: 18px;
+  background-image: var(--lp-hero-portrait);
+  background-size: cover;
+  background-position: center;
+  border: 3px solid rgba(255,255,255,0.95);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  pointer-events: none;
+}
 @media (max-width: 480px) {
-  #lpWrap #lpHero { min-height: 440px; }
-  #lpWrap .lp-hero-body { padding: 24px 22px 24px; }
-  #lpWrap .lp-hero-title { font-size: 30px; }
+  #lpWrap #lpHero { min-height: 460px; }
+  #lpWrap .lp-hero-body { padding: 24px 22px 24px; padding-right: 100px; }
+  #lpWrap .lp-hero-title { font-size: 28px; }
   #lpWrap .lp-hero-sub { font-size: 14px; }
   #lpWrap .lp-hero-cta { padding: 14px 24px; font-size: 15px; width: 100%; align-self: stretch; text-align: center; }
+  #lpWrap .lp-hero-portrait { width: 72px; height: 72px; bottom: 16px; right: 16px; border-width: 2px; }
+}
+
+/* ── Form modal (popup) ── */
+#lpWrap #lpModalRoot {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 15, 30, 0.65);
+  z-index: 99998;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+#lpWrap #lpModalRoot.active {
+  display: flex;
+  animation: lpFadeIn .22s ease both;
+}
+@keyframes lpFadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+/* When the form is inside the modal, override the inline display:none
+   that hides it on the hero screen. */
+#lpWrap #lpModalRoot #lpForm {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  display: block !important;
+  animation: lpModalIn .28s cubic-bezier(.16,1,.3,1) both;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+@keyframes lpModalIn {
+  from { opacity: 0; transform: translateY(20px) scale(.97) }
+  to   { opacity: 1; transform: translateY(0) scale(1) }
+}
+
+#lpWrap .lp-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  border: none;
+  color: #6b7280 !important;
+  -webkit-text-fill-color: #6b7280 !important;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: background .15s ease, color .15s ease;
+  font-family: inherit;
+  padding: 0;
+}
+#lpWrap .lp-modal-close:hover {
+  background: #e5e7eb;
+  color: #111 !important;
+  -webkit-text-fill-color: #111 !important;
+}
+
+/* GHL-style step tabs */
+#lpWrap .lp-step-tabs {
+  display: flex;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fff;
+}
+#lpWrap .lp-step-tab {
+  flex: 1;
+  text-align: center;
+  padding: 14px 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+  border-bottom: 3px solid transparent;
+  transition: color .2s ease, border-color .2s ease;
+  letter-spacing: .03em;
+  font-family: inherit;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+#lpWrap .lp-step-tab.active {
+  color: #2563eb !important;
+  -webkit-text-fill-color: #2563eb !important;
+  border-bottom-color: #2563eb;
 }
 
 /* ── Transition screen ── */
@@ -655,89 +768,101 @@
 
 <div id="lpWrap">
 
-  <!-- ── HERO LANDING (shown first to fresh visitors) ── -->
+  <!-- ── HERO LANDING (shown first to fresh visitors) ──
+       Background photo: edit "--lp-hero-img" in CSS above to a real URL,
+         e.g. url('https://chatbot-t1bk.vercel.app/images/hero.jpg')
+       Brother+Luke portrait: same idea — set "--lp-hero-portrait" inline
+         on the .lp-hero-portrait div below, e.g. style="--lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/luke-brother.jpg')" -->
   <div id="lpHero" class="active">
     <div class="lp-hero-logo">
       <img src="https://chatbot-t1bk.vercel.app/logo.png" alt="LP Pressure Wash">
     </div>
     <div class="lp-hero-body">
-      <div class="lp-hero-eyebrow">LP Pressure Wash · Doylestown, PA</div>
-      <h1 class="lp-hero-title">Your Property — Spotless In Hours, Booked In 60 Seconds.</h1>
-      <p class="lp-hero-sub">Driveways, decks, siding, fences, patios, gutters — anything outside, any kind of grime. Tell us what needs cleaning and we'll send you a price right now, plus a same-week appointment if you want it. No phone tag. No callbacks. No haggling.</p>
+      <div class="lp-hero-eyebrow">Mother's Day Special</div>
+      <h1 class="lp-hero-title">Your Property — Spotless In Hours. 10% Off This Mother's Day.</h1>
+      <p class="lp-hero-sub">Bundle a driveway, deck, patio, fence, or gutters with your house wash and those are 30% off too. Free quote in under a minute.</p>
       <button type="button" class="lp-hero-cta" onclick="lpStartFromHero()">Let's get started with your estimate →</button>
       <div class="lp-hero-trust">
         <span>Free estimate</span>
-        <span>Same-week service</span>
+        <span>10% off house washes</span>
+        <span>Bundle = 30% off add-ons</span>
         <span>Local &amp; insured</span>
-        <span>5-star rated</span>
       </div>
     </div>
+    <!-- Portrait: replace --lp-hero-portrait value with url('your-photo.jpg') when ready -->
+    <div class="lp-hero-portrait"></div>
   </div>
 
-  <!-- ── FORM ── -->
-  <div id="lpForm" class="lp-box" style="display:none">
-    <div class="lp-header">
-      <img src="https://chatbot-t1bk.vercel.app/logo.png" alt="LP Pressure Wash">
-    </div>
-    <div class="lp-prog">
-      <div class="lp-prog-track"><div class="lp-prog-fill" id="lpFill"></div></div>
-      <span class="lp-prog-label" id="lpLabel">1 / 2</span>
-    </div>
-
-    <div class="lp-inner">
-
-      <!-- Step 1 -->
-      <div class="lp-step active" id="lpS1">
-        <div class="lp-eyebrow">Free Estimate</div>
-        <h2 class="lp-q">What needs to be cleaned?</h2>
-        <p class="lp-sub">Select everything that applies.</p>
-        <div class="lp-cards">
-          <button type="button" class="lp-pick" data-val="Driveway" onclick="lpToggle(this)">
-            <span class="lp-pick-ic">🚗</span><span class="lp-pick-t">Driveway</span><span class="lp-pick-d">Algae &amp; mildew</span>
-          </button>
-          <button type="button" class="lp-pick" data-val="House Exterior" onclick="lpToggle(this)">
-            <span class="lp-pick-ic">🏠</span><span class="lp-pick-t">House Exterior</span><span class="lp-pick-d">Siding, brick, stucco</span>
-          </button>
-          <button type="button" class="lp-pick" data-val="Deck" onclick="lpToggle(this)">
-            <span class="lp-pick-ic">🪵</span><span class="lp-pick-t">Deck</span><span class="lp-pick-d">Wood or composite</span>
-          </button>
-          <button type="button" class="lp-pick" data-val="Patio" onclick="lpToggle(this)">
-            <span class="lp-pick-ic">🧱</span><span class="lp-pick-t">Patio</span><span class="lp-pick-d">Concrete or pavers</span>
-          </button>
-          <button type="button" class="lp-pick" data-val="Fence" onclick="lpToggle(this)">
-            <span class="lp-pick-ic">🌿</span><span class="lp-pick-t">Fence</span><span class="lp-pick-d">Vinyl or wood</span>
-          </button>
-          <button type="button" class="lp-pick" data-val="Gutters" onclick="lpToggle(this)">
-            <span class="lp-pick-ic">🌧️</span><span class="lp-pick-t">Gutters</span><span class="lp-pick-d">Clean &amp; flush</span>
-          </button>
-        </div>
-        <span class="lp-err" id="e1">Please select at least one service.</span>
-        <div class="lp-btns"><button type="button" class="lp-primary" onclick="lpNext(1)">Continue →</button></div>
+  <!-- ── FORM MODAL (popup) ── -->
+  <div id="lpModalRoot">
+    <div id="lpForm" class="lp-box" style="display:none">
+      <button type="button" class="lp-modal-close" onclick="lpCloseModal()" aria-label="Close">×</button>
+      <div class="lp-header">
+        <img src="https://chatbot-t1bk.vercel.app/logo.png" alt="LP Pressure Wash">
       </div>
 
-      <!-- Step 2 (contact info) -->
-      <div class="lp-step" id="lpS2">
-        <div class="lp-eyebrow">Last step</div>
-        <h2 class="lp-q">Where should we send your estimate?</h2>
-        <p class="lp-sub">We'll reach out within a few hours — no spam, ever.</p>
-        <div class="lp-field"><label>First name</label><input class="lp-input" id="iName" type="text" placeholder="John" autocomplete="given-name" form="__lp_isolated__"></div>
-        <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="text" inputmode="tel" placeholder="(555) 000-0000" autocomplete="tel" form="__lp_isolated__"></div>
-        <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="123 Main St, Doylestown, PA" autocomplete="street-address" form="__lp_isolated__"></div>
-        <div class="lp-field"><label>Anything else?<span class="lp-optional">Optional</span></label><textarea class="lp-input" id="iNotes" rows="2" placeholder="Gate code, pets, access, special requests…" form="__lp_isolated__"></textarea></div>
-        <span class="lp-err" id="e2">Please fill in your name and phone number.</span>
-        <div class="lp-btns">
-          <button type="button" class="lp-secondary" onclick="lpBack(2)">Back</button>
-          <button type="button" class="lp-primary" onclick="lpSubmit()">Get My Estimate →</button>
-        </div>
+      <!-- GHL-style step tabs -->
+      <div class="lp-step-tabs">
+        <button type="button" class="lp-step-tab active" id="lpTab1" onclick="lpGoToStep(1)">Step 1</button>
+        <button type="button" class="lp-step-tab" id="lpTab2" onclick="lpGoToStep(2)">Step 2</button>
       </div>
 
-    </div>
+      <div class="lp-inner">
 
-    <div class="lp-trust">
-      <div class="lp-trust-item"><span class="lp-trust-dot"></span>Free estimates</div>
-      <div class="lp-trust-item"><span class="lp-trust-dot"></span>No obligation</div>
-      <div class="lp-trust-item"><span class="lp-trust-dot"></span>Local &amp; insured</div>
-      <div class="lp-trust-item"><span class="lp-trust-dot"></span>5-star rated</div>
+        <!-- Step 1: Contact info -->
+        <div class="lp-step active" id="lpS1">
+          <div class="lp-eyebrow">Free Estimate · 60 sec</div>
+          <h2 class="lp-q">Where should we send your estimate?</h2>
+          <p class="lp-sub">No spam, ever. We use this to text you the quote.</p>
+          <div class="lp-field"><label>First name</label><input class="lp-input" id="iName" type="text" placeholder="John" autocomplete="given-name" form="__lp_isolated__"></div>
+          <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="text" inputmode="tel" placeholder="(555) 000-0000" autocomplete="tel" form="__lp_isolated__"></div>
+          <div class="lp-field"><label>Email</label><input class="lp-input" id="iEmail" type="email" placeholder="you@email.com" autocomplete="email" form="__lp_isolated__"></div>
+          <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="Street, City, State" autocomplete="street-address" form="__lp_isolated__"></div>
+          <span class="lp-err" id="e1">Please fill in your name and phone number.</span>
+          <div class="lp-btns"><button type="button" class="lp-primary" onclick="lpNext(1)">Continue →</button></div>
+        </div>
+
+        <!-- Step 2: Services + optional notes -->
+        <div class="lp-step" id="lpS2">
+          <div class="lp-eyebrow">Almost done</div>
+          <h2 class="lp-q">What needs to be cleaned?</h2>
+          <p class="lp-sub">Bundle add-ons with a house wash for 30% off.</p>
+          <div class="lp-cards">
+            <button type="button" class="lp-pick" data-val="Driveway" onclick="lpToggle(this)">
+              <span class="lp-pick-ic">🚗</span><span class="lp-pick-t">Driveway</span><span class="lp-pick-d">Algae &amp; mildew</span>
+            </button>
+            <button type="button" class="lp-pick" data-val="House Exterior" onclick="lpToggle(this)">
+              <span class="lp-pick-ic">🏠</span><span class="lp-pick-t">House Exterior</span><span class="lp-pick-d">Siding, brick, stucco</span>
+            </button>
+            <button type="button" class="lp-pick" data-val="Deck" onclick="lpToggle(this)">
+              <span class="lp-pick-ic">🪵</span><span class="lp-pick-t">Deck</span><span class="lp-pick-d">Wood or composite</span>
+            </button>
+            <button type="button" class="lp-pick" data-val="Patio" onclick="lpToggle(this)">
+              <span class="lp-pick-ic">🧱</span><span class="lp-pick-t">Patio</span><span class="lp-pick-d">Concrete or pavers</span>
+            </button>
+            <button type="button" class="lp-pick" data-val="Fence" onclick="lpToggle(this)">
+              <span class="lp-pick-ic">🌿</span><span class="lp-pick-t">Fence</span><span class="lp-pick-d">Vinyl or wood</span>
+            </button>
+            <button type="button" class="lp-pick" data-val="Gutters" onclick="lpToggle(this)">
+              <span class="lp-pick-ic">🌧️</span><span class="lp-pick-t">Gutters</span><span class="lp-pick-d">Clean &amp; flush</span>
+            </button>
+          </div>
+          <div class="lp-field" style="margin-top:14px"><label>Anything else?<span class="lp-optional">Optional</span></label><textarea class="lp-input" id="iNotes" rows="2" placeholder="Gate code, pets, access, special requests…" form="__lp_isolated__"></textarea></div>
+          <span class="lp-err" id="e2">Please select at least one service.</span>
+          <div class="lp-btns">
+            <button type="button" class="lp-secondary" onclick="lpBack(2)">Back</button>
+            <button type="button" class="lp-primary" onclick="lpSubmit()">Get My Estimate →</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="lp-trust">
+        <div class="lp-trust-item"><span class="lp-trust-dot"></span>Free estimates</div>
+        <div class="lp-trust-item"><span class="lp-trust-dot"></span>No obligation</div>
+        <div class="lp-trust-item"><span class="lp-trust-dot"></span>Local &amp; insured</div>
+        <div class="lp-trust-item"><span class="lp-trust-dot"></span>5-star rated</div>
+      </div>
     </div>
   </div>
 
@@ -788,7 +913,7 @@
   const STATE_KEY    = 'lp_estimate_state_v1';
   const STATE_TTL_MS = 30 * 60 * 1000; // 30 min
 
-  const fd = { services: [], condition: '', firstName: '', phone: '', address: '', notes: '' };
+  const fd = { services: [], condition: '', firstName: '', phone: '', email: '', address: '', notes: '' };
 
   // ── Ad attribution capture ─────────────────────────────────────────────
   // Runs once on page load. Grabs UTM params + click IDs from the URL
@@ -876,7 +1001,7 @@
   document.addEventListener('submit', function (e) {
     if (wrap && wrap.contains(e.target)) { e.preventDefault(); e.stopPropagation(); }
   }, true);
-  ['iName', 'iPhone', 'iAddr'].forEach(function (id) {
+  ['iName', 'iPhone', 'iEmail', 'iAddr'].forEach(function (id) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); }
@@ -896,6 +1021,7 @@
     const digits = phoneEl.value.replace(/\D/g, '');
     if (digits.length < 7) return; // ignore very short / empty values
     const nameEl  = document.getElementById('iName');
+    const emailEl = document.getElementById('iEmail');
     const addrEl  = document.getElementById('iAddr');
     const notesEl = document.getElementById('iNotes');
     const body = JSON.stringify({
@@ -906,6 +1032,7 @@
         condition: fd.condition,
         firstName: (nameEl  && nameEl.value.trim())  || '',
         phone:     phoneEl.value.trim(),
+        email:     (emailEl && emailEl.value.trim()) || '',
         address:   (addrEl  && addrEl.value.trim())  || '',
         notes:     (notesEl && notesEl.value.trim()) || '',
       },
@@ -978,18 +1105,42 @@
   function setStep(n) {
     document.querySelectorAll('#lpForm .lp-step').forEach(s => s.classList.remove('active'));
     document.getElementById('lpS' + n).classList.add('active');
-    document.getElementById('lpFill').style.width = prog[n] + '%';
-    document.getElementById('lpLabel').textContent = n + ' / 2';
+    document.querySelectorAll('#lpForm .lp-step-tab').forEach(t => t.classList.remove('active'));
+    const tab = document.getElementById('lpTab' + n);
+    if (tab) tab.classList.add('active');
     currentStep = n;
     saveState();
   }
 
+  // ── Step 1 → 2: validate contact, snapshot to fd, advance ──────────
   window.lpNext = function (step) {
-    if (step === 1 && !fd.services.length) return showErr('e1');
+    if (step === 1) {
+      const n = document.getElementById('iName').value.trim();
+      const p = document.getElementById('iPhone').value.trim();
+      if (!n || !p) return showErr('e1');
+      fd.firstName = n;
+      fd.phone     = p;
+      fd.email     = (document.getElementById('iEmail').value || '').trim();
+      fd.address   = (document.getElementById('iAddr').value  || '').trim();
+    }
     hideErr('e' + step);
     setStep(step + 1);
   };
   window.lpBack = function (step) { setStep(step - 1); };
+  // Allow tab clicks to jump directly between steps (only forward if step 1 valid)
+  window.lpGoToStep = function (n) {
+    if (n === 2) {
+      const nm = document.getElementById('iName').value.trim();
+      const ph = document.getElementById('iPhone').value.trim();
+      if (!nm || !ph) return showErr('e1');
+      fd.firstName = nm;
+      fd.phone     = ph;
+      fd.email     = (document.getElementById('iEmail').value || '').trim();
+      fd.address   = (document.getElementById('iAddr').value  || '').trim();
+    }
+    hideErr('e1'); hideErr('e2');
+    setStep(n);
+  };
 
   window.lpToggle = function (el) {
     el.classList.toggle('sel');
@@ -1004,17 +1155,17 @@
     saveState();
   };
 
+  // ── Step 2 → submit: validate services, close modal, run transition + chat ──
   window.lpSubmit = function () {
-    const n = document.getElementById('iName').value.trim();
-    const p = document.getElementById('iPhone').value.trim();
-    if (!n || !p) return showErr('e2');
+    if (!fd.services.length) return showErr('e2');
     hideErr('e2');
-    fd.firstName = n; fd.phone = p;
-    fd.address = document.getElementById('iAddr').value.trim();
-    fd.notes   = (document.getElementById('iNotes')?.value || '').trim();
+    fd.notes = (document.getElementById('iNotes')?.value || '').trim();
     partialSent = true; // full submit supersedes any partial capture
     currentPhase = 'transition';
     saveState();
+
+    // Tear the modal down so the transition + chat take over the page.
+    lpCloseModal();
 
     // Fire the first AI call in parallel with the transition screen.
     pendingFirstResponse = fetch(ESTIMATE_URL, {
@@ -1028,9 +1179,11 @@
 
   function runTransition() {
     const form = document.getElementById('lpForm');
+    const hero = document.getElementById('lpHero');
     form.classList.add('hide');
     setTimeout(() => {
       form.style.display = 'none';
+      if (hero) { hero.classList.remove('active'); hero.style.display = 'none'; }
       document.getElementById('lpTransition').classList.add('active');
       ['tl1', 'tl2', 'tl3'].forEach((id, i) => {
         setTimeout(() => document.getElementById(id).classList.add('show'), i * 650);
@@ -1040,6 +1193,8 @@
   }
 
   function showChat() {
+    const hero = document.getElementById('lpHero');
+    if (hero) { hero.classList.remove('active'); hero.style.display = 'none'; }
     document.getElementById('lpForm').style.display = 'none';
     document.getElementById('lpTransition').style.display = 'none';
     document.getElementById('lpChat').classList.add('active');
@@ -1173,13 +1328,17 @@
 
     const formEl = document.getElementById('lpForm');
     const transEl = document.getElementById('lpTransition');
-    const chatEl = document.getElementById('lpChat');
-    formEl.style.display = '';
+    const chatEl  = document.getElementById('lpChat');
+    const heroEl  = document.getElementById('lpHero');
+    formEl.style.display = 'none';
     formEl.classList.remove('hide');
     transEl.classList.remove('active');
     transEl.style.display = '';
     ['tl1','tl2','tl3'].forEach(id => document.getElementById(id)?.classList.remove('show'));
     chatEl.classList.remove('active');
+    // Bring the hero back so the user lands on the marketing screen, not a blank form
+    if (heroEl) { heroEl.classList.add('active'); heroEl.style.display = ''; }
+    lpCloseModal();
 
     const msgs = document.getElementById('chatMsgs');
     const typing = document.getElementById('typing');
@@ -1190,39 +1349,58 @@
     const chatInp = document.getElementById('chatInp');
     if (chatInp) { chatInp.value = ''; window.lpGrow(chatInp); }
 
+    currentPhase = 'hero';
     setStep(1);
   }
 
-  // ── Hero → form transition (CTA on the landing screen) ───────────────────
-  // Runs once when a fresh visitor taps "Let's get started…". Fades the
-  // hero out, reveals the form, and persists the new phase so a refresh
-  // doesn't bounce them back to the marketing landing.
+  // ── Hero CTA: open the form modal on top of the hero ─────────────────────
+  // Hero stays visible underneath. Modal closes on X / backdrop click / ESC,
+  // or auto-closes on submit before the transition + chat phase takes over.
   window.lpStartFromHero = function () {
-    const hero = document.getElementById('lpHero');
-    const form = document.getElementById('lpForm');
-    if (!hero || !form) return;
-    hero.classList.add('hide');
+    const modal = document.getElementById('lpModalRoot');
+    const form  = document.getElementById('lpForm');
+    if (!modal || !form) return;
     form.style.display = '';
-    setTimeout(() => {
-      hero.classList.remove('active');
-      hero.style.display = 'none';
-    }, 360);
-    currentPhase = 'form';
-    setStep(1);
+    modal.classList.add('active');
+    // Lock background scroll so the modal feels like a popup
+    document.body.style.overflow = 'hidden';
+    if (currentPhase !== 'chat' && currentPhase !== 'transition') currentPhase = 'form';
+    setStep(currentStep || 1);
     saveState();
+    // Focus the first empty contact field for fast typing
+    setTimeout(() => {
+      const firstEmpty = ['iName','iPhone','iEmail','iAddr']
+        .map(id => document.getElementById(id))
+        .find(el => el && !el.value);
+      if (firstEmpty) firstEmpty.focus();
+    }, 250);
   };
+
+  window.lpCloseModal = function () {
+    const modal = document.getElementById('lpModalRoot');
+    if (!modal) return;
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+  };
+
+  // Click outside the form card → close modal
+  (function bindModalDismiss() {
+    const modal = document.getElementById('lpModalRoot');
+    if (modal) {
+      modal.addEventListener('click', function (e) {
+        if (e.target === modal) lpCloseModal();
+      });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal && modal.classList.contains('active')) lpCloseModal();
+    });
+  })();
 
   // ── Restore state on load if we have a recent session ────────────────────
   function restoreFromSaved() {
     const saved = loadState();
     try { console.log('[lpWidget] restoreFromSaved →', saved ? { step: saved.currentStep, phase: saved.currentPhase, hasName: !!saved.fd?.firstName } : 'no saved state'); } catch {}
     if (!saved) return; // no saved state → leave hero visible (default)
-
-    // Saved state exists — visitor has engaged before, skip the hero.
-    const heroEl = document.getElementById('lpHero');
-    if (heroEl) { heroEl.classList.remove('active'); heroEl.style.display = 'none'; }
-    const formEl = document.getElementById('lpForm');
-    if (formEl) { formEl.style.display = ''; }
 
     Object.assign(fd, saved.fd || {});
     currentStep  = saved.currentStep  || 1;
@@ -1232,27 +1410,26 @@
     clientId = saved.clientId || null;
     jobId    = saved.jobId    || null;
 
-    // Re-tick service cards on step 1
-    document.querySelectorAll('#lpS1 .lp-pick').forEach(btn => {
+    // Re-tick service cards (now on step 2)
+    document.querySelectorAll('#lpS2 .lp-pick').forEach(btn => {
       if ((fd.services || []).indexOf(btn.dataset.val) > -1) btn.classList.add('sel');
     });
-    // Re-tick condition on step 2
-    if (fd.condition) {
-      document.querySelectorAll('[data-grp="cond"]').forEach(btn => {
-        if (btn.dataset.val === fd.condition) btn.classList.add('sel');
-      });
-    }
-    // Re-fill step 3 inputs
+    // Re-fill contact inputs (step 1) and the optional notes textarea (step 2)
     const nameEl  = document.getElementById('iName');
     const phoneEl = document.getElementById('iPhone');
+    const emailEl = document.getElementById('iEmail');
     const addrEl  = document.getElementById('iAddr');
     const notesEl = document.getElementById('iNotes');
     if (nameEl)  nameEl.value  = fd.firstName || '';
     if (phoneEl) phoneEl.value = fd.phone     || '';
+    if (emailEl) emailEl.value = fd.email     || '';
     if (addrEl)  addrEl.value  = fd.address   || '';
     if (notesEl) notesEl.value = fd.notes     || '';
 
     if (currentPhase === 'chat') {
+      // User finished the form earlier — drop the hero, show chat directly.
+      const heroEl = document.getElementById('lpHero');
+      if (heroEl) { heroEl.classList.remove('active'); heroEl.style.display = 'none'; }
       document.getElementById('lpForm').style.display = 'none';
       document.getElementById('lpTransition').style.display = 'none';
       document.getElementById('lpChat').classList.add('active');
@@ -1268,11 +1445,16 @@
     } else if (currentPhase === 'transition') {
       // User hit submit, page reloaded before chat opened — jump straight to chat.
       currentPhase = 'chat';
+      const heroEl = document.getElementById('lpHero');
+      if (heroEl) { heroEl.classList.remove('active'); heroEl.style.display = 'none'; }
       document.getElementById('lpForm').style.display = 'none';
       document.getElementById('lpChat').classList.add('active');
       document.getElementById('typing').classList.add('show');
       callEstimate('');
     } else {
+      // Mid-form on a fresh page load: hero stays visible, modal is closed.
+      // User clicks the CTA again to resume — fields are already pre-filled
+      // from the assignments above. setStep just preps the right tab.
       setStep(currentStep);
     }
   }
