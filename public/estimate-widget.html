@@ -295,6 +295,119 @@
   flex-shrink: 0;
 }
 
+/* ── Hero landing screen (shown first to fresh visitors) ── */
+/* To swap the background photo: replace --lp-hero-img URL below with
+   a real LP photo (e.g. url('https://chatbot-t1bk.vercel.app/images/hero.jpg')).
+   Stays a gradient until that's done — looks clean either way. */
+#lpWrap #lpHero {
+  --lp-hero-img: none;
+  display: none;
+  position: relative;
+  min-height: 480px;
+  border-radius: 22px;
+  overflow: hidden;
+  flex-direction: column;
+  background-color: #0b1a2e;
+  background-image:
+    linear-gradient(180deg, rgba(7,15,30,0.55) 0%, rgba(7,15,30,0.88) 100%),
+    var(--lp-hero-img),
+    linear-gradient(135deg, #0f2245 0%, #2563eb 60%, #06b6d4 100%);
+  background-size: cover, cover, cover;
+  background-position: center, center, center;
+  color: #fff;
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.09);
+  transition: opacity .35s ease, transform .35s ease;
+}
+#lpWrap #lpHero.active { display: flex; }
+#lpWrap #lpHero.hide { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+
+#lpWrap .lp-hero-logo {
+  padding: 22px 26px 0;
+  flex-shrink: 0;
+}
+#lpWrap .lp-hero-logo img {
+  height: 36px;
+  display: block;
+  filter: brightness(0) invert(1);   /* tints logo white */
+}
+
+#lpWrap .lp-hero-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px 28px 32px;
+}
+#lpWrap .lp-hero-eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  color: #93c5fd !important;
+  -webkit-text-fill-color: #93c5fd !important;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+#lpWrap .lp-hero-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 38px;
+  line-height: 1.07;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  margin-bottom: 18px;
+}
+#lpWrap .lp-hero-sub {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.86) !important;
+  -webkit-text-fill-color: rgba(255,255,255,0.86) !important;
+  margin-bottom: 26px;
+  max-width: 520px;
+}
+#lpWrap .lp-hero-cta {
+  align-self: flex-start;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0b1a2e !important;
+  -webkit-text-fill-color: #0b1a2e !important;
+  background: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 16px 28px;
+  cursor: pointer;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.28);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+#lpWrap .lp-hero-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 36px rgba(0,0,0,0.34);
+}
+#lpWrap .lp-hero-cta:active { transform: translateY(0); }
+#lpWrap .lp-hero-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 24px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.78) !important;
+  -webkit-text-fill-color: rgba(255,255,255,0.78) !important;
+}
+#lpWrap .lp-hero-trust span::before {
+  content: '✓ ';
+  color: #6ee7b7 !important;
+  -webkit-text-fill-color: #6ee7b7 !important;
+  font-weight: 700;
+}
+@media (max-width: 480px) {
+  #lpWrap #lpHero { min-height: 440px; }
+  #lpWrap .lp-hero-body { padding: 24px 22px 24px; }
+  #lpWrap .lp-hero-title { font-size: 30px; }
+  #lpWrap .lp-hero-sub { font-size: 14px; }
+  #lpWrap .lp-hero-cta { padding: 14px 24px; font-size: 15px; width: 100%; align-self: stretch; text-align: center; }
+}
+
 /* ── Transition screen ── */
 #lpWrap #lpTransition {
   display: none;
@@ -542,8 +655,27 @@
 
 <div id="lpWrap">
 
+  <!-- ── HERO LANDING (shown first to fresh visitors) ── -->
+  <div id="lpHero" class="active">
+    <div class="lp-hero-logo">
+      <img src="https://chatbot-t1bk.vercel.app/logo.png" alt="LP Pressure Wash">
+    </div>
+    <div class="lp-hero-body">
+      <div class="lp-hero-eyebrow">LP Pressure Wash · Doylestown, PA</div>
+      <h1 class="lp-hero-title">Your Property — Spotless In Hours, Booked In 60 Seconds.</h1>
+      <p class="lp-hero-sub">Driveways, decks, siding, fences, patios, gutters — anything outside, any kind of grime. Tell us what needs cleaning and we'll send you a price right now, plus a same-week appointment if you want it. No phone tag. No callbacks. No haggling.</p>
+      <button type="button" class="lp-hero-cta" onclick="lpStartFromHero()">Let's get started with your estimate →</button>
+      <div class="lp-hero-trust">
+        <span>Free estimate</span>
+        <span>Same-week service</span>
+        <span>Local &amp; insured</span>
+        <span>5-star rated</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ── FORM ── -->
-  <div id="lpForm" class="lp-box">
+  <div id="lpForm" class="lp-box" style="display:none">
     <div class="lp-header">
       <img src="https://chatbot-t1bk.vercel.app/logo.png" alt="LP Pressure Wash">
     </div>
@@ -1061,11 +1193,36 @@
     setStep(1);
   }
 
+  // ── Hero → form transition (CTA on the landing screen) ───────────────────
+  // Runs once when a fresh visitor taps "Let's get started…". Fades the
+  // hero out, reveals the form, and persists the new phase so a refresh
+  // doesn't bounce them back to the marketing landing.
+  window.lpStartFromHero = function () {
+    const hero = document.getElementById('lpHero');
+    const form = document.getElementById('lpForm');
+    if (!hero || !form) return;
+    hero.classList.add('hide');
+    form.style.display = '';
+    setTimeout(() => {
+      hero.classList.remove('active');
+      hero.style.display = 'none';
+    }, 360);
+    currentPhase = 'form';
+    setStep(1);
+    saveState();
+  };
+
   // ── Restore state on load if we have a recent session ────────────────────
   function restoreFromSaved() {
     const saved = loadState();
     try { console.log('[lpWidget] restoreFromSaved →', saved ? { step: saved.currentStep, phase: saved.currentPhase, hasName: !!saved.fd?.firstName } : 'no saved state'); } catch {}
-    if (!saved) return;
+    if (!saved) return; // no saved state → leave hero visible (default)
+
+    // Saved state exists — visitor has engaged before, skip the hero.
+    const heroEl = document.getElementById('lpHero');
+    if (heroEl) { heroEl.classList.remove('active'); heroEl.style.display = 'none'; }
+    const formEl = document.getElementById('lpForm');
+    if (formEl) { formEl.style.display = ''; }
 
     Object.assign(fd, saved.fd || {});
     currentStep  = saved.currentStep  || 1;
