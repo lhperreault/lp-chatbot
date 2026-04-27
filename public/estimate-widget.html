@@ -29,7 +29,6 @@
 #lpWrap .lp-box {
   background: #fff;
   border-radius: 22px;
-  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.09);
   overflow: hidden;
 }
 #lpWrap #lpForm { transition: opacity .35s ease, transform .35s ease; }
@@ -343,9 +342,8 @@
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;     /* content sits at the top; portrait owns the bottom-right */
-  padding: 56px 36px 56px;
-  padding-right: 240px;             /* leaves room for the bottom-right portrait */
+  justify-content: center;         /* content vertically centered in the upper region */
+  padding: 36px 36px 280px 36px;    /* bottom 280 reserves the portrait area */
 }
 #lpWrap .lp-hero-eyebrow {
   font-size: 11px;
@@ -387,12 +385,13 @@
   border-radius: 999px;
   padding: 16px 28px;
   cursor: pointer;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.28);
-  transition: transform .15s ease, box-shadow .15s ease;
+  box-shadow: none;
+  -webkit-box-shadow: none;
+  transition: transform .15s ease, background .15s ease;
 }
 #lpWrap .lp-hero-cta:hover {
   transform: translateY(-1px);
-  box-shadow: 0 12px 36px rgba(0,0,0,0.34);
+  background: #f3f4f6;
 }
 #lpWrap .lp-hero-cta:active { transform: translateY(0); }
 #lpWrap .lp-hero-trust {
@@ -417,17 +416,19 @@
 #lpWrap .lp-hero-portrait {
   --lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/brothers.png');
   position: absolute;
-  bottom: 30px;
-  right: 32px;
-  width: 200px;
-  height: 200px;
-  border-radius: 22px;
+  bottom: 36px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: 220px;
+  height: 220px;
+  border-radius: 24px;
   background-color: #ffffff;            /* fallback if portrait has transparency */
   background-image: var(--lp-hero-portrait);
   background-size: cover;
   background-position: center top;       /* bias the crop toward faces */
   border: 3px solid rgba(255,255,255,0.95);
-  box-shadow: 0 14px 36px rgba(0,0,0,0.4);
+  box-shadow: none;
   pointer-events: none;
 }
 @media (max-width: 720px) {
@@ -454,9 +455,13 @@
     top: 16px;
     right: 16px;
     bottom: auto;
+    left: auto;                  /* override desktop's bottom-center positioning */
+    transform: none;
     border-width: 2px;
     border-radius: 14px;
   }
+  /* Mobile body doesn't reserve a 280px-tall photo zone — photo is at top */
+  #lpWrap .lp-hero-body { padding: 28px 22px 32px; }
 }
 @media (max-width: 420px) {
   #lpWrap .lp-hero-title { font-size: 25px; }
