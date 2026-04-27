@@ -199,7 +199,7 @@
 #lpWrap .lp-input {
   display: block;
   width: 100%;
-  background: #f9fafb;
+  background: #fff;
   border: 1.5px solid #e5e7eb;
   border-radius: 9px;
   padding: 11px 14px;
@@ -343,9 +343,9 @@
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;     /* content sits at the top; portrait owns the bottom-right */
   padding: 56px 36px 56px;
-  padding-right: 240px;   /* leaves room for the bigger bottom-right portrait */
+  padding-right: 240px;             /* leaves room for the bottom-right portrait */
 }
 #lpWrap .lp-hero-eyebrow {
   font-size: 11px;
@@ -468,13 +468,11 @@
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(7, 15, 30, 0.65);
+  background: rgba(7, 15, 30, 0.50);   /* clean dark overlay, no blur */
   z-index: 99998;
   align-items: center;
   justify-content: center;
   padding: 16px;
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
 }
 #lpWrap #lpModalRoot.active {
   display: flex;
@@ -843,11 +841,11 @@
         <div class="lp-step active" id="lpS1">
           <div class="lp-eyebrow">Free Estimate · 60 sec</div>
           <h2 class="lp-q">Where should we send your estimate?</h2>
-          <p class="lp-sub">No spam, ever. We use this to text you the quote.</p>
-          <div class="lp-field"><label>First name</label><input class="lp-input" id="iName" type="text" placeholder="John" autocomplete="given-name" form="__lp_isolated__"></div>
+          <p class="lp-sub">Takes about 60 seconds.</p>
+          <div class="lp-field"><label>Full name</label><input class="lp-input" id="iName" type="text" placeholder="John Baker" autocomplete="name" form="__lp_isolated__"></div>
           <div class="lp-field"><label>Phone number</label><input class="lp-input" id="iPhone" type="text" inputmode="tel" placeholder="(555) 000-0000" autocomplete="tel" form="__lp_isolated__"></div>
           <div class="lp-field"><label>Email</label><input class="lp-input" id="iEmail" type="email" placeholder="you@email.com" autocomplete="email" form="__lp_isolated__"></div>
-          <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="Street, City, State" autocomplete="street-address" form="__lp_isolated__"></div>
+          <div class="lp-field"><label>Property address</label><input class="lp-input" id="iAddr" type="text" placeholder="Street, City, Zip" autocomplete="street-address" form="__lp_isolated__"></div>
           <span class="lp-err" id="e1">Please fill in your name and phone number.</span>
           <div class="lp-btns"><button type="button" class="lp-primary" onclick="lpNext(1)">Continue →</button></div>
         </div>
