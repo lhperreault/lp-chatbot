@@ -319,7 +319,7 @@
   --lp-hero-img: url('https://chatbot-t1bk.vercel.app/images/hero.png');
   display: none;
   position: relative;
-  min-height: 720px;
+  min-height: 780px;
   border-radius: 22px;
   overflow: hidden;
   flex-direction: column;
@@ -356,7 +356,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;         /* content vertically centered in the upper region */
-  padding: 36px 36px 280px 36px;    /* bottom 280 reserves the portrait area */
+  padding: 36px 36px 340px 36px;    /* bottom 340 reserves portrait + badges row */
 }
 #lpWrap .lp-hero-eyebrow {
   font-size: 11px;
@@ -429,7 +429,7 @@
 #lpWrap .lp-hero-portrait {
   --lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/brothers.png');
   position: absolute;
-  bottom: 36px;
+  bottom: 90px;                       /* lifted to make room for the platforms row below */
   left: 50%;
   right: auto;
   transform: translateX(-50%);
@@ -444,12 +444,61 @@
   box-shadow: none;
   pointer-events: none;
 }
+
+/* ── Trust platforms row (Google · BBB · Angi review badges) ──
+   Sits right below the brothers portrait. Default text badges look
+   decent on their own; once Luke downloads the official badges from
+   each platform's business portal, swap each <span> for an <img>. */
+#lpWrap .lp-hero-platforms {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  z-index: 2;
+}
+#lpWrap .lp-platform-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #1f2937 !important;
+  -webkit-text-fill-color: #1f2937 !important;
+  white-space: nowrap;
+  text-decoration: none;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+}
+#lpWrap .lp-platform-badge .lp-platform-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+#lpWrap .lp-platform-badge .lp-platform-stars {
+  color: #fbbf24 !important;
+  -webkit-text-fill-color: #fbbf24 !important;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
 @media (max-width: 720px) {
   /* Mobile-first hero: tuned to fit a typical phone viewport on first
-     load (no scrolling needed to see the brothers photo). */
-  #lpWrap #lpHero { min-height: 620px; }
+     load (no scrolling needed to see the brothers photo + badges). */
+  #lpWrap #lpHero { min-height: 700px; }
   #lpWrap .lp-hero-body {
-    padding: 28px 22px 200px;     /* bottom 200 = photo zone, tighter than before */
+    padding: 26px 22px 270px;     /* bottom 270 reserves portrait + badges */
     justify-content: center;
   }
   #lpWrap .lp-hero-title { font-size: 28px; line-height: 1.12; }
@@ -464,21 +513,31 @@
     line-height: 1.25;
   }
   #lpWrap .lp-hero-portrait {
-    width: 170px;
-    height: 170px;
+    width: 160px;
+    height: 160px;
     top: auto;
-    bottom: 22px;                  /* tighter to the bottom edge */
+    bottom: 70px;                  /* lifted to make room for badges below */
     left: 50%;
     right: auto;
     transform: translateX(-50%);
     border-width: 3px;
     border-radius: 20px;
   }
+  #lpWrap .lp-hero-platforms {
+    bottom: 18px;
+    gap: 6px;
+  }
+  #lpWrap .lp-platform-badge {
+    padding: 6px 10px;
+    font-size: 10.5px;
+  }
+  #lpWrap .lp-platform-badge .lp-platform-mark { width: 16px; height: 16px; font-size: 9px; }
 }
 @media (max-width: 420px) {
   #lpWrap .lp-hero-title { font-size: 25px; }
-  #lpWrap .lp-hero-portrait { width: 150px; height: 150px; }
-  #lpWrap .lp-hero-body { padding-bottom: 180px; }
+  #lpWrap .lp-hero-portrait { width: 140px; height: 140px; }
+  #lpWrap .lp-hero-body { padding-bottom: 250px; }
+  #lpWrap .lp-platform-badge { padding: 5px 9px; font-size: 10px; }
 }
 
 /* ── Form modal (popup) ── */
@@ -837,6 +896,23 @@
       </div>
     </div>
     <div class="lp-hero-portrait"></div>
+    <!-- Trust badges row. Once you download the official badges from each
+         platform, swap each <span class="lp-platform-mark">…</span> for an
+         <img src="https://chatbot-t1bk.vercel.app/images/badge-google.png" style="width:18px;height:18px;border-radius:4px"> -->
+    <div class="lp-hero-platforms">
+      <a class="lp-platform-badge" href="https://www.google.com/search?q=lp+pressure+washing+reviews" target="_blank" rel="noopener" aria-label="Reviewed on Google">
+        <span class="lp-platform-mark" style="background:#fff;color:#4285F4;border:1px solid #e5e7eb">G</span>
+        <span class="lp-platform-stars">★★★★★</span>
+      </a>
+      <a class="lp-platform-badge" href="https://www.bbb.org/search?find_text=lp+pressure+washing" target="_blank" rel="noopener" aria-label="BBB Accredited">
+        <span class="lp-platform-mark" style="background:#1a4480;color:#fff">BBB</span>
+        <span>A+</span>
+      </a>
+      <a class="lp-platform-badge" href="https://www.angi.com/" target="_blank" rel="noopener" aria-label="Reviewed on Angi">
+        <span class="lp-platform-mark" style="background:#FF6153;color:#fff">A</span>
+        <span class="lp-platform-stars">★★★★★</span>
+      </a>
+    </div>
   </div>
 
   <!-- ── FORM MODAL (popup) ── -->
