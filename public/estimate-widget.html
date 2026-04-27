@@ -313,7 +313,9 @@
   flex-direction: column;
   background-color: #0b1a2e;
   background-image:
-    linear-gradient(180deg, rgba(7,15,30,0.55) 0%, rgba(7,15,30,0.88) 100%),
+    /* dark on the LEFT for headline legibility, lighter on the RIGHT
+       so the house photo shows through where the eye lands */
+    linear-gradient(105deg, rgba(7,15,30,0.86) 0%, rgba(7,15,30,0.62) 50%, rgba(7,15,30,0.30) 100%),
     var(--lp-hero-img),
     linear-gradient(135deg, #0f2245 0%, #2563eb 60%, #06b6d4 100%);
   background-size: cover, cover, cover;
@@ -430,16 +432,35 @@
 }
 @media (max-width: 720px) {
   #lpWrap #lpHero { min-height: 480px; }
-  #lpWrap .lp-hero-body { padding: 26px 22px 26px; padding-right: 110px; }
-  #lpWrap .lp-hero-title { font-size: 30px; }
+  /* Body now spans the full mobile width — no right-padding reservation,
+     because the portrait moves to the top-right corner where it can't
+     conflict with the CTA. */
+  #lpWrap .lp-hero-body { padding: 24px 22px 26px; }
+  #lpWrap .lp-hero-title { font-size: 28px; line-height: 1.12; }
   #lpWrap .lp-hero-sub { font-size: 14.5px; }
-  #lpWrap .lp-hero-cta { padding: 14px 24px; font-size: 15px; width: 100%; align-self: stretch; text-align: center; }
-  #lpWrap .lp-hero-portrait { width: 86px; height: 86px; bottom: 16px; right: 16px; border-width: 2px; border-radius: 16px; }
+  #lpWrap .lp-hero-cta {
+    padding: 14px 18px;
+    font-size: 14.5px;
+    width: 100%;
+    align-self: stretch;
+    text-align: center;
+    /* prevent button text from getting cropped by long copy */
+    white-space: normal;
+    line-height: 1.25;
+  }
+  #lpWrap .lp-hero-portrait {
+    width: 56px;
+    height: 56px;
+    top: 16px;
+    right: 16px;
+    bottom: auto;
+    border-width: 2px;
+    border-radius: 14px;
+  }
 }
 @media (max-width: 420px) {
-  #lpWrap .lp-hero-title { font-size: 26px; }
-  #lpWrap .lp-hero-portrait { width: 72px; height: 72px; }
-  #lpWrap .lp-hero-body { padding-right: 96px; }
+  #lpWrap .lp-hero-title { font-size: 25px; }
+  #lpWrap .lp-hero-portrait { width: 50px; height: 50px; }
 }
 
 /* ── Form modal (popup) ── */
@@ -783,27 +804,22 @@
 <div id="lpWrap">
 
   <!-- ── HERO LANDING (shown first to fresh visitors) ──
-       Background photo: edit "--lp-hero-img" in CSS above to a real URL,
-         e.g. url('https://chatbot-t1bk.vercel.app/images/hero.jpg')
-       Brother+Luke portrait: same idea — set "--lp-hero-portrait" inline
-         on the .lp-hero-portrait div below, e.g. style="--lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/luke-brother.jpg')" -->
+       Background photo: edit "--lp-hero-img" in CSS above
+       Brother+Luke portrait: edit "--lp-hero-portrait" in CSS above -->
   <div id="lpHero" class="active">
     <div class="lp-hero-logo">
       <img src="https://chatbot-t1bk.vercel.app/logo.png" alt="LP Pressure Wash">
     </div>
     <div class="lp-hero-body">
-      <div class="lp-hero-eyebrow">Mother's Day Special</div>
-      <h1 class="lp-hero-title">Your Property — Spotless In Hours. 10% Off This Mother's Day.</h1>
-      <p class="lp-hero-sub">Bundle a driveway, deck, patio, fence, or gutters with your house wash and those are 30% off too. Free quote in under a minute.</p>
-      <button type="button" class="lp-hero-cta" onclick="lpStartFromHero()">Let's get started with your estimate →</button>
+      <h1 class="lp-hero-title">Looking to get your home professionally washed?</h1>
+      <p class="lp-hero-sub"><strong>Mother's Day Special</strong> — 10% off a house wash · 30% off additional services.</p>
+      <button type="button" class="lp-hero-cta" onclick="lpStartFromHero()">Let's Get Your Estimate Started →</button>
       <div class="lp-hero-trust">
         <span>Free estimate</span>
-        <span>10% off house washes</span>
-        <span>Bundle = 30% off add-ons</span>
         <span>Local &amp; insured</span>
+        <span>5-star rated</span>
       </div>
     </div>
-    <!-- Portrait: replace --lp-hero-portrait value with url('your-photo.jpg') when ready -->
     <div class="lp-hero-portrait"></div>
   </div>
 
