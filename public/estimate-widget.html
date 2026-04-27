@@ -15,11 +15,15 @@
 #lpWrap {
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   width: 100% !important;
-  max-width: 600px !important;
+  max-width: 1000px !important;   /* hero gets the whole width on desktop */
   margin: 0 auto !important;
   color: #1f2937;
   line-height: 1.5;
 }
+/* Keep chat + transition narrow inside the wider wrap so they still
+   feel like a chat app, not a billboard. */
+#lpWrap #lpTransition,
+#lpWrap #lpChat { max-width: 600px; margin-left: auto; margin-right: auto; }
 
 /* ── Shared card shell ── */
 #lpWrap .lp-box {
@@ -303,7 +307,7 @@
   --lp-hero-img: url('https://chatbot-t1bk.vercel.app/images/hero.png');
   display: none;
   position: relative;
-  min-height: 480px;
+  min-height: 560px;
   border-radius: 22px;
   overflow: hidden;
   flex-direction: column;
@@ -326,9 +330,11 @@
   flex-shrink: 0;
 }
 #lpWrap .lp-hero-logo img {
-  height: 36px;
+  height: 42px;
   display: block;
-  filter: brightness(0) invert(1);   /* tints logo white */
+  /* Show the LP logo in its actual colors. (Earlier version inverted
+     to white, which collapsed the LP mark to a featureless white
+     blob on the dark hero.) */
 }
 
 #lpWrap .lp-hero-body {
@@ -336,7 +342,8 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 32px 28px 32px;
+  padding: 36px 36px 36px;
+  padding-right: 200px;   /* leaves room for the bottom-right portrait */
 }
 #lpWrap .lp-hero-eyebrow {
   font-size: 11px;
@@ -349,13 +356,14 @@
 }
 #lpWrap .lp-hero-title {
   font-family: 'Playfair Display', serif;
-  font-size: 38px;
-  line-height: 1.07;
+  font-size: 44px;
+  line-height: 1.06;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
   margin-bottom: 18px;
+  max-width: 720px;       /* nicer line breaks on the wider hero */
 }
 #lpWrap .lp-hero-sub {
   font-size: 15.5px;
@@ -407,25 +415,31 @@
 #lpWrap .lp-hero-portrait {
   --lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/brothers.png');
   position: absolute;
-  bottom: 22px;
-  right: 22px;
-  width: 96px;
-  height: 96px;
-  border-radius: 18px;
+  bottom: 26px;
+  right: 28px;
+  width: 150px;
+  height: 150px;
+  border-radius: 20px;
+  background-color: #ffffff;            /* fallback if portrait has transparency */
   background-image: var(--lp-hero-portrait);
   background-size: cover;
-  background-position: center;
+  background-position: center top;       /* bias the crop toward faces */
   border: 3px solid rgba(255,255,255,0.95);
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   pointer-events: none;
 }
-@media (max-width: 480px) {
-  #lpWrap #lpHero { min-height: 460px; }
-  #lpWrap .lp-hero-body { padding: 24px 22px 24px; padding-right: 100px; }
-  #lpWrap .lp-hero-title { font-size: 28px; }
-  #lpWrap .lp-hero-sub { font-size: 14px; }
+@media (max-width: 720px) {
+  #lpWrap #lpHero { min-height: 480px; }
+  #lpWrap .lp-hero-body { padding: 26px 22px 26px; padding-right: 110px; }
+  #lpWrap .lp-hero-title { font-size: 30px; }
+  #lpWrap .lp-hero-sub { font-size: 14.5px; }
   #lpWrap .lp-hero-cta { padding: 14px 24px; font-size: 15px; width: 100%; align-self: stretch; text-align: center; }
-  #lpWrap .lp-hero-portrait { width: 72px; height: 72px; bottom: 16px; right: 16px; border-width: 2px; }
+  #lpWrap .lp-hero-portrait { width: 86px; height: 86px; bottom: 16px; right: 16px; border-width: 2px; border-radius: 16px; }
+}
+@media (max-width: 420px) {
+  #lpWrap .lp-hero-title { font-size: 26px; }
+  #lpWrap .lp-hero-portrait { width: 72px; height: 72px; }
+  #lpWrap .lp-hero-body { padding-right: 96px; }
 }
 
 /* ── Form modal (popup) ── */
