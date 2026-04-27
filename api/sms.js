@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { google } from "googleapis";
+import { OFFER_PROMPT_BLOCK } from "../lib/currentOffer.js";
 
 // ─── Inbound Twilio SMS → Claude tool-calling draft → Telegram approval ──
 // Now a full estimator: Claude has access to the same 6 tools as the
@@ -312,7 +313,7 @@ const LP_PRICING_BODY = `CORE RULES:
 - Plant/pet safety: "We use professional-grade soaps safe for all plants and pets." Never mention bleach.
 - Insurance: Yes, general liability (Hiscox).
 - Year: 2026.
-
+${OFFER_PROMPT_BLOCK}
 UNKNOWN SITUATIONS (CRITICAL):
 If the customer asks about ANY service/surface/situation not clearly covered by the pricing below, do NOT guess. Reply something like: "That's an interesting one — let me flag it for our team to review so we can give you an accurate quote. I'll get back to you within a few hours." Then call save_quote_job with serviceType="Custom — <what they asked>", quote="Needs human review", quoteAmount=0, concerns="Not covered by standard pricing — human review required".
 

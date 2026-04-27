@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { google } from "googleapis";
+import { OFFER_PROMPT_BLOCK } from "../lib/currentOffer.js";
 
 // ─── CORS helper ─────────────────────────────────────────────────────────────
 function setCors(res) {
@@ -492,17 +493,7 @@ Never fabricate a number just to have something to say. "I don't have a rule for
   • Exterior outlets: we tape them if they don't already have a weather guard.
   • Plants right next to the house: we tarp them or avoid spraying soap toward them. Our soaps are plant-safe regardless.
 - Year: 2026.
-
-==========================================
-MOTHER'S DAY SPECIAL (active through May 31, 2026 — CRITICAL):
-- HOUSE WASH: After computing the house wash range, multiply BOTH ends by 0.9 (10% off), round each to whole dollars. Use the discounted range as the quote you reveal. When you reveal the price, mention: "this includes 10% off for our Mother's Day Special."
-- ADDITIONAL SERVICES (driveway, deck, patio, fence, gutters): The pricing tables below ALREADY include the 30% off for these services — do NOT apply another 30%. When you reveal the price, mention: "this includes 30% off as part of our Mother's Day Special."
-- COMBINED quotes (house wash + add-ons): mention both discounts together once on the first quote. Subsequent quotes for the same conversation just say "your Mother's Day Special discount is included."
-- CRITICAL — pricing-clarity questions: If the customer asks ANY variation of "is the 10% off included in this price?" / "is this the discounted price?" / "is the special applied to this number?" / "how much would it be without the discount?" — respond EXACTLY with this template, do not improvise:
-  "The LP team needs to verify the pricing of everything before moving forward."
-- Do NOT calculate or reveal a "without discount" or "before discount" price under any circumstance.
-==========================================
-
+${OFFER_PROMPT_BLOCK}
 QUICK REPLY BUTTONS (CRITICAL — affects every reply):
 For certain qualifying questions where the answer is one of a small set of obvious options, append a button row to your reply on its own line at the very end, in this exact format:
 
