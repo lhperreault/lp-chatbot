@@ -21,5 +21,21 @@
       "path": "/api/biz-report",
       "schedule": "0 0 */2 * *"
     }
+  ],
+  "headers": [
+    {
+      "source": "/estimate-widget.html",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=300, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/estimate-loader.js",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=300, stale-while-revalidate=86400" }
+      ]
+    }
   ]
 }
