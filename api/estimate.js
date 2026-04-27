@@ -261,6 +261,24 @@ function prettyDate(yyyyMmDd) {
   return `${months[m - 1]} ${d}`;
 }
 
+// Extracts a [QR: option1 | option2 | option3] marker from the assistant reply
+// and returns a structured quickReplies array along with the cleaned reply.
+// The marker is intentionally human-readable (works fine when logged to
+// Airtable Conversation rows even if it occasionally leaks).
+function extractQuickReplies(replyText) {
+  if (!replyText || typeof replyText !== "string") return { cleanReply: replyText, quickReplies: null };
+  const qrRegex = /\[QR:\s*([^\]]+)\]/g;
+  const matches = [...replyText.matchAll(qrRegex)];
+  if (!matches.length) return { cleanReply: replyText, quickReplies: null };
+  // Use the LAST [QR: ...] marker if multiple appear (the freshest one wins
+  // — older ones may have leaked from a prior turn echoed back).
+  const last = matches[matches.length - 1];
+  const options = last[1].split("|").map(s => s.trim()).filter(Boolean).slice(0, 6);
+  if (!options.length) return { cleanReply: replyText, quickReplies: null };
+  const cleanReply = replyText.replace(qrRegex, "").replace(/\n{3,}/g, "\n\n").trim();
+  return { cleanReply, quickReplies: options };
+}
+
 function htmlEscape(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -474,6 +492,41 @@ Never fabricate a number just to have something to say. "I don't have a rule for
   • Exterior outlets: we tape them if they don't already have a weather guard.
   • Plants right next to the house: we tarp them or avoid spraying soap toward them. Our soaps are plant-safe regardless.
 - Year: 2026.
+
+==========================================
+MOTHER'S DAY SPECIAL (active through May 31, 2026 — CRITICAL):
+- HOUSE WASH: After computing the house wash range, multiply BOTH ends by 0.9 (10% off), round each to whole dollars. Use the discounted range as the quote you reveal. When you reveal the price, mention: "this includes 10% off for our Mother's Day Special."
+- ADDITIONAL SERVICES (driveway, deck, patio, fence, gutters): The pricing tables below ALREADY include the 30% off for these services — do NOT apply another 30%. When you reveal the price, mention: "this includes 30% off as part of our Mother's Day Special."
+- COMBINED quotes (house wash + add-ons): mention both discounts together once on the first quote. Subsequent quotes for the same conversation just say "your Mother's Day Special discount is included."
+- CRITICAL — pricing-clarity questions: If the customer asks ANY variation of "is the 10% off included in this price?" / "is this the discounted price?" / "is the special applied to this number?" / "how much would it be without the discount?" — respond EXACTLY with this template, do not improvise:
+  "The LP team needs to verify the pricing of everything before moving forward."
+- Do NOT calculate or reveal a "without discount" or "before discount" price under any circumstance.
+==========================================
+
+QUICK REPLY BUTTONS (CRITICAL — affects every reply):
+For certain qualifying questions where the answer is one of a small set of obvious options, append a button row to your reply on its own line at the very end, in this exact format:
+
+  [QR: option1 | option2 | option3]
+
+USE [QR: ...] for these questions specifically:
+- House stories: [QR: 1 story | 2 stories | 3 stories]
+- Last cleaned: [QR: Within 2 years | 3-5 years ago | 5+ years ago | Never]
+- General dirt level: [QR: A little dirty | Pretty dirty | Really dirty]
+- Has anyone else cleaned it before: [QR: Yes | No | Not sure]
+- Yes/no questions: [QR: Yes | No]
+- Surface type when there are 2-3 obvious options: [QR: Wood | Composite] or [QR: Vinyl | Wood | Metal]
+- Want to see availability: [QR: Yes, show me dates | Not yet, just the quote]
+
+DO NOT include [QR: ...] for:
+- Open-ended questions ("any access concerns?", "anything else we should know?")
+- Questions about specific numbers (square footage, linear feet, # of steps, # of stories higher than 3)
+- Address, dates, names, prices
+- The first greeting message
+- Final price summaries / quote reveals (no buttons on a price)
+- Multi-step instructions
+
+The widget renders the [QR: ...] options as clickable pills below your message. The customer can either tap one or type their own answer.
+==========================================
 
 ==========================================
 MULTI-SERVICE FLOW (CRITICAL — read carefully):
@@ -973,12 +1026,17 @@ export default async function handler(req, res) {
       replyText = `Hey ${fname}! 👋 Thanks for filling out the form — what's the best way for me to help you today?`;
     }
 
+    // Extract [QR: ...] quick-reply markers BEFORE logging, so the cleaned
+    // reply is what shows in Airtable + the customer's chat bubble.
+    const { cleanReply, quickReplies } = extractQuickReplies(replyText);
+
     if (state.clientId && latestUserMessage) logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Inbound",  author: "Customer", message: latestUserMessage }).catch(() => {});
-    if (state.clientId && replyText)         logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Outbound", author: "AI bot",   message: replyText, intent: state.quoteJustSent ? "quote_sent" : undefined }).catch(() => {});
-    if (state.jobId && !state.quoteJustSent) updateJob(state.jobId, { "Conversation log": JSON.stringify([...messages, { role: "assistant", content: replyText }]) }).catch(() => {});
+    if (state.clientId && cleanReply)        logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Outbound", author: "AI bot",   message: cleanReply, intent: state.quoteJustSent ? "quote_sent" : undefined }).catch(() => {});
+    if (state.jobId && !state.quoteJustSent) updateJob(state.jobId, { "Conversation log": JSON.stringify([...messages, { role: "assistant", content: cleanReply }]) }).catch(() => {});
 
     return res.status(200).json({
-      reply:         replyText,
+      reply:         cleanReply,
+      quickReplies:  quickReplies,
       clientId:      state.clientId || null,
       jobId:         state.jobId    || null,
       quoteJustSent: state.quoteJustSent,
