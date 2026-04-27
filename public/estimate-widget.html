@@ -307,7 +307,7 @@
   --lp-hero-img: url('https://chatbot-t1bk.vercel.app/images/hero.png');
   display: none;
   position: relative;
-  min-height: 560px;
+  min-height: 720px;
   border-radius: 22px;
   overflow: hidden;
   flex-direction: column;
@@ -344,8 +344,8 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 36px 36px 36px;
-  padding-right: 200px;   /* leaves room for the bottom-right portrait */
+  padding: 56px 36px 56px;
+  padding-right: 240px;   /* leaves room for the bigger bottom-right portrait */
 }
 #lpWrap .lp-hero-eyebrow {
   font-size: 11px;
@@ -417,25 +417,25 @@
 #lpWrap .lp-hero-portrait {
   --lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/brothers.png');
   position: absolute;
-  bottom: 26px;
-  right: 28px;
-  width: 150px;
-  height: 150px;
-  border-radius: 20px;
+  bottom: 30px;
+  right: 32px;
+  width: 200px;
+  height: 200px;
+  border-radius: 22px;
   background-color: #ffffff;            /* fallback if portrait has transparency */
   background-image: var(--lp-hero-portrait);
   background-size: cover;
   background-position: center top;       /* bias the crop toward faces */
   border: 3px solid rgba(255,255,255,0.95);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  box-shadow: 0 14px 36px rgba(0,0,0,0.4);
   pointer-events: none;
 }
 @media (max-width: 720px) {
-  #lpWrap #lpHero { min-height: 480px; }
+  #lpWrap #lpHero { min-height: 580px; }
   /* Body now spans the full mobile width — no right-padding reservation,
      because the portrait moves to the top-right corner where it can't
      conflict with the CTA. */
-  #lpWrap .lp-hero-body { padding: 24px 22px 26px; }
+  #lpWrap .lp-hero-body { padding: 28px 22px 32px; }
   #lpWrap .lp-hero-title { font-size: 28px; line-height: 1.12; }
   #lpWrap .lp-hero-sub { font-size: 14.5px; }
   #lpWrap .lp-hero-cta {
