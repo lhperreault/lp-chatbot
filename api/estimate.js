@@ -266,6 +266,13 @@ function prettyDate(yyyyMmDd) {
 // and returns a structured quickReplies array along with the cleaned reply.
 // The marker is intentionally human-readable (works fine when logged to
 // Airtable Conversation rows even if it occasionally leaks).
+//
+// SAFETY NET: even if the AI slips and emits buckets for a measurement
+// question, this function strips them — bucketing sqft answers like
+// "100-200" or "300+" leads to wrong quotes (a 300 sqft deck vs a 1200
+// sqft deck price very differently). Customer must type the number.
+const MEASUREMENT_QUESTION_RX = /\b(sq\s*ft|sqft|square\s*f(ee|oo)t(age)?|linear\s*f(ee|oo)t|ft\s*long|feet\s*long|how\s*(big|large|long|wide|many\s*(feet|ft|steps|stairs|sections))|footage|approximate\s*size|rough(ly)?\s*(size|sq|how\s*big)|dimensions|how\s*many\s*linear)\b/i;
+
 function extractQuickReplies(replyText) {
   if (!replyText || typeof replyText !== "string") return { cleanReply: replyText, quickReplies: null };
   const qrRegex = /\[QR:\s*([^\]]+)\]/g;
@@ -277,6 +284,14 @@ function extractQuickReplies(replyText) {
   const options = last[1].split("|").map(s => s.trim()).filter(Boolean).slice(0, 6);
   if (!options.length) return { cleanReply: replyText, quickReplies: null };
   const cleanReply = replyText.replace(qrRegex, "").replace(/\n{3,}/g, "\n\n").trim();
+
+  // Defense-in-depth: drop the buckets if the cleaned question is asking
+  // for a measurement. Customer needs to type an actual number for these.
+  if (MEASUREMENT_QUESTION_RX.test(cleanReply)) {
+    console.log("[extractQuickReplies] dropped buckets — measurement question detected:", cleanReply.slice(0, 120));
+    return { cleanReply, quickReplies: null };
+  }
+
   return { cleanReply, quickReplies: options };
 }
 
@@ -508,10 +523,14 @@ USE [QR: ...] for these questions specifically:
 - Surface type when there are 2-3 obvious options: [QR: Wood | Composite] or [QR: Vinyl | Wood | Metal]
 - Want to see availability: [QR: Yes, show me dates | Not yet, just the quote]
 
-DO NOT include [QR: ...] for:
+NEVER use [QR: ...] for:
+- ANY question asking for a measurement of any kind: square footage, linear feet, length, width, height, "how big," "how long," "roughly how many feet," dimensions. Always let the customer type the actual number.
+    ❌ WRONG (NEVER do this): "Roughly how many sq ft is the deck? [QR: under 100 | 100-200 | 200-300 | 300+]"
+    ✅ RIGHT: "Roughly how many sq ft is the deck?" — no buttons, let them type the number.
+  Why this matters: a 300 sqft deck and an 800 sqft deck have completely different prices. If a customer taps "300+" they could mean 350 OR 1200. Bucketing measurement answers leads to wrong quotes. Always get the actual number.
 - Open-ended questions ("any access concerns?", "anything else we should know?")
-- Questions about specific numbers (square footage, linear feet, # of steps, # of stories higher than 3)
-- Address, dates, names, prices
+- Number of steps, stairs, railings, sections — anything where a count matters for pricing
+- Address, dates, names, prices, dollar amounts
 - The first greeting message
 - Final price summaries / quote reveals (no buttons on a price)
 - Multi-step instructions
