@@ -11,6 +11,19 @@
   text-shadow: none;
   filter: none;
 }
+/* Aggressive shadow killer — overrides anything Elementor / WordPress
+   theme / browser defaults inject. Anything inside #lpWrap that needs
+   a shadow has to declare its own intentionally; nothing inherits one
+   from the host page. */
+#lpWrap, #lpWrap *, #lpWrap *::before, #lpWrap *::after {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -moz-box-shadow: none !important;
+  filter: none !important;
+  -webkit-filter: none !important;
+  text-shadow: none !important;
+  outline: none !important;
+}
 
 #lpWrap {
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -39,7 +52,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: none;
   background: #fff;
 }
 #lpWrap .lp-header img {
@@ -273,9 +286,9 @@
 
 /* ── Trust row ── */
 #lpWrap .lp-trust {
-  background: #f8f9fb;
-  border-top: 1px solid #f0f0f0;
-  padding: 12px 16px;
+  background: #fff;
+  border-top: none;
+  padding: 14px 16px 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -432,11 +445,14 @@
   pointer-events: none;
 }
 @media (max-width: 720px) {
-  #lpWrap #lpHero { min-height: 580px; }
-  /* Body now spans the full mobile width — no right-padding reservation,
-     because the portrait moves to the top-right corner where it can't
-     conflict with the CTA. */
-  #lpWrap .lp-hero-body { padding: 28px 22px 32px; }
+  /* Mobile-first hero: tall card, content vertically centered upper area,
+     brothers photo BIG at the bottom-center (matches Luke's call to make
+     phone the priority since 99% of traffic is mobile). */
+  #lpWrap #lpHero { min-height: 720px; }
+  #lpWrap .lp-hero-body {
+    padding: 32px 22px 240px;     /* bottom 240 reserves the centered portrait */
+    justify-content: center;
+  }
   #lpWrap .lp-hero-title { font-size: 28px; line-height: 1.12; }
   #lpWrap .lp-hero-sub { font-size: 14.5px; }
   #lpWrap .lp-hero-cta {
@@ -445,27 +461,25 @@
     width: 100%;
     align-self: stretch;
     text-align: center;
-    /* prevent button text from getting cropped by long copy */
     white-space: normal;
     line-height: 1.25;
   }
   #lpWrap .lp-hero-portrait {
-    width: 56px;
-    height: 56px;
-    top: 16px;
-    right: 16px;
-    bottom: auto;
-    left: auto;                  /* override desktop's bottom-center positioning */
-    transform: none;
-    border-width: 2px;
-    border-radius: 14px;
+    width: 190px;
+    height: 190px;
+    top: auto;
+    bottom: 28px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    border-width: 3px;
+    border-radius: 22px;
   }
-  /* Mobile body doesn't reserve a 280px-tall photo zone — photo is at top */
-  #lpWrap .lp-hero-body { padding: 28px 22px 32px; }
 }
 @media (max-width: 420px) {
   #lpWrap .lp-hero-title { font-size: 25px; }
-  #lpWrap .lp-hero-portrait { width: 50px; height: 50px; }
+  #lpWrap .lp-hero-portrait { width: 170px; height: 170px; }
+  #lpWrap .lp-hero-body { padding-bottom: 220px; }
 }
 
 /* ── Form modal (popup) ── */
@@ -533,7 +547,7 @@
 /* GHL-style step tabs */
 #lpWrap .lp-step-tabs {
   display: flex;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: none;
   background: #fff;
 }
 #lpWrap .lp-step-tab {
