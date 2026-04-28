@@ -310,7 +310,49 @@ function parseQuoteRange(quoteStr) {
   return { low, high };
 }
 
-async function notifyQuote(state, formData) {
+// Format the conversation history as a Telegram-friendly transcript.
+// Returns a string like:
+//   👤 Customer: hey what's the price for a 2-story house wash
+//   🤖 Bot: Hey John 👋 Roughly how dirty would you say it is?
+//   👤 Customer: pretty dirty
+//   ... etc.
+// Truncates from the OLDEST end if the result would exceed maxChars
+// (Telegram caps a single message at 4096 chars; we leave headroom for
+// the surrounding quote/booking summary text).
+function formatConversationTranscript(messages, maxChars = 2400) {
+  if (!Array.isArray(messages) || !messages.length) return "";
+  const lines = [];
+  for (const m of messages) {
+    if (!m || !m.content) continue;
+    // Anthropic tool messages have content as an array of blocks; extract
+    // any plain text blocks. Normal messages have content as a string.
+    let text = "";
+    if (typeof m.content === "string") {
+      text = m.content;
+    } else if (Array.isArray(m.content)) {
+      text = m.content
+        .filter(b => b && b.type === "text" && typeof b.text === "string")
+        .map(b => b.text)
+        .join(" ")
+        .trim();
+    }
+    if (!text) continue; // skip pure tool_use / tool_result blocks
+    const role = m.role === "user" ? "👤 Customer" : "🤖 Bot";
+    // Strip [QR: ...] markers so they don't pollute the transcript
+    const clean = text.replace(/\[QR:[^\]]*\]/g, "").trim();
+    if (!clean) continue;
+    lines.push(`${role}: ${clean}`);
+  }
+  if (!lines.length) return "";
+  let transcript = lines.join("\n\n");
+  if (transcript.length > maxChars) {
+    // Trim from the START so the most recent (most useful) turns survive
+    transcript = "<i>… earlier turns trimmed for length …</i>\n\n" + transcript.slice(transcript.length - maxChars + 60);
+  }
+  return transcript;
+}
+
+async function notifyQuote(state, formData, messages) {
   try {
     const jobs = await getJobsForClient(state.clientId);
     if (jobs.length === 0) return;
@@ -376,6 +418,16 @@ async function notifyQuote(state, formData) {
     msgParts.push("");
     msgParts.push(`<pre>${htmlEscape(draftText)}</pre>`);
 
+    // Append the full chat transcript so Luke can see exactly what the
+    // customer typed and what the bot quoted, in one Telegram message.
+    const transcript = formatConversationTranscript(messages);
+    if (transcript) {
+      msgParts.push("");
+      msgParts.push(`<b>🗨 Chat transcript:</b>`);
+      msgParts.push("");
+      msgParts.push(`<pre>${htmlEscape(transcript)}</pre>`);
+    }
+
     await sendTelegramNotification(msgParts.join("\n"));
   } catch (err) {
     console.error("[notifyQuote] error:", err);
@@ -436,18 +488,26 @@ async function notifyLead(formData, attribution) {
   }
 }
 
-async function notifyBooking(state, formData, bookingDate) {
+async function notifyBooking(state, formData, bookingDate, messages) {
   try {
     const firstName = formData.firstName || "Customer";
     const phone     = formData.phone     || "no phone";
-    const msg = [
+    const parts = [
       `✅ <b>BOOKED — ${htmlEscape(firstName)}</b>`,
       `📞 ${htmlEscape(phone)}`,
       `📅 ${htmlEscape(prettyDate(bookingDate))}`,
       ``,
       `Check your Google Calendar for the appointment details.`,
-    ].join("\n");
-    await sendTelegramNotification(msg);
+    ];
+    // Full transcript so Luke has the whole conversation in one place.
+    const transcript = formatConversationTranscript(messages);
+    if (transcript) {
+      parts.push("");
+      parts.push(`<b>🗨 Chat transcript:</b>`);
+      parts.push("");
+      parts.push(`<pre>${htmlEscape(transcript)}</pre>`);
+    }
+    await sendTelegramNotification(parts.join("\n"));
   } catch (err) {
     console.error("[notifyBooking] error:", err);
   }
@@ -772,7 +832,7 @@ async function runTool(name, args, state, formData, originalMessages) {
         state.jobId = r.jobId;
         state.quoteJustSent = true;
         // Fire-and-forget Telegram notification so the AI isn't blocked.
-        notifyQuote(state, formData).catch(err => console.error("[notifyQuote] fire-and-forget error:", err));
+        notifyQuote(state, formData, originalMessages).catch(err => console.error("[notifyQuote] fire-and-forget error:", err));
       }
       return r;
     }
@@ -788,7 +848,7 @@ async function runTool(name, args, state, formData, originalMessages) {
       await logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Inbound", author: "Customer", message: args.customerConfirmText, intent: "booking_confirmed" });
     }
     // Fire-and-forget booking notification.
-    notifyBooking(state, formData, args.bookingDate).catch(err => console.error("[notifyBooking] fire-and-forget error:", err));
+    notifyBooking(state, formData, args.bookingDate, originalMessages).catch(err => console.error("[notifyBooking] fire-and-forget error:", err));
     return r;
   }
   return { error: "Unknown tool" };
@@ -846,6 +906,7 @@ export default async function handler(req, res) {
         const r = await upsertClient({
           firstName: formData.firstName || "(name not entered)",
           phone:     formData.phone,
+          email:     formData.email || "",
           address:   formData.address || "",
         }, null, attribution);
         if (r?.clientId) partialClientId = r.clientId;
@@ -887,7 +948,7 @@ export default async function handler(req, res) {
 
     const [leadRes, propRes] = await Promise.all([
       needsLead
-        ? upsertClient({ firstName: formData.firstName, phone: formData.phone, address: formData.address }, null, attribution)
+        ? upsertClient({ firstName: formData.firstName, phone: formData.phone, email: formData.email, address: formData.address }, null, attribution)
         : Promise.resolve(null),
       needsProperty
         ? lookupProperty(formData.address)
