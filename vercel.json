@@ -14,6 +14,9 @@
     },
     "api/telegram-webhook.js": {
       "maxDuration": 15
+    },
+    "api/cron-stale-alerts.js": {
+      "maxDuration": 30
     }
   },
   "crons": [

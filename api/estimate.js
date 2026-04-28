@@ -237,6 +237,63 @@ async function sendTelegramNotification(text) {
   }
 }
 
+// Build a vCard 3.0 string from formData. iPhone Contacts opens .vcf
+// attachments natively — Luke taps once on the file in Telegram and gets
+// "Add to Contacts" prompt. CRLF line endings are required by RFC 2426.
+function buildVCard(formData) {
+  const firstName = (formData.firstName || "Lead").trim();
+  const phone     = (formData.phone     || "").trim();
+  const email     = (formData.email     || "").trim();
+  const address   = (formData.address   || "").trim();
+  const services  = Array.isArray(formData.services) ? formData.services.join(", ") : (formData.services || "");
+  // Tag the contact so Luke can find them in iPhone Contacts later.
+  const orgTag    = "LP Lead";
+  const today     = new Date().toISOString().split("T")[0];
+  const note      = `LP Pressure Wash lead · captured ${today}` + (services ? ` · wants: ${services}` : "");
+
+  const lines = ["BEGIN:VCARD", "VERSION:3.0"];
+  // FN is the human-readable name; N is structured (last;first;middle;prefix;suffix).
+  lines.push(`FN:${firstName} (${orgTag})`);
+  lines.push(`N:;${firstName};;;`);
+  lines.push(`ORG:${orgTag}`);
+  if (phone)   lines.push(`TEL;TYPE=CELL:${phone}`);
+  if (email)   lines.push(`EMAIL;TYPE=INTERNET:${email}`);
+  if (address) lines.push(`ADR;TYPE=HOME:;;${address.replace(/[,;]/g, " ")};;;;`);
+  // Escape note: vCard requires \, ; and \n to be backslash-escaped.
+  const safeNote = note.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
+  lines.push(`NOTE:${safeNote}`);
+  lines.push("END:VCARD");
+  return lines.join("\r\n") + "\r\n";
+}
+
+// Send a vCard to Telegram as a document attachment. Luke taps it on
+// iPhone → "Add to Contacts" → done. Uses multipart/form-data via the
+// built-in FormData/Blob (Node 18+ on Vercel supports both).
+async function sendTelegramVCard(formData) {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) return;
+  if (!formData?.firstName || !formData?.phone) return; // need at least these
+  try {
+    const vcf = buildVCard(formData);
+    const safeName = (formData.firstName || "lead").replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+    const filename = `${safeName}_lp_lead.vcf`;
+    const blob = new Blob([vcf], { type: "text/vcard" });
+
+    const form = new FormData();
+    form.append("chat_id", process.env.TELEGRAM_CHAT_ID);
+    form.append("document", blob, filename);
+    form.append("caption", `📇 Tap to save ${formData.firstName} to your iPhone contacts`);
+
+    const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendDocument`, {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json();
+    if (!data.ok) console.log("[telegram vcard] send error:", data);
+  } catch (err) {
+    console.error("[telegram vcard] send threw:", err);
+  }
+}
+
 // Airtable linked-record fields store an array of record IDs. SEARCH on
 // ARRAYJOIN flattens the array into a string we can substring-match.
 async function getJobsForClient(clientId) {
@@ -456,6 +513,8 @@ async function notifyPartialLead(formData, attribution) {
     parts.push(`<i>If they finish, you'll see a 📥 New form submission ping next. If not, they bailed.</i>`);
 
     await sendTelegramNotification(parts.join("\n"));
+    // Auto-attach a vCard so Luke can tap once on iPhone to add to Contacts.
+    sendTelegramVCard(formData).catch(err => console.error("[vcard partial] error:", err));
   } catch (err) {
     console.error("[notifyPartialLead] error:", err);
   }
@@ -480,9 +539,11 @@ async function notifyLead(formData, attribution) {
     ];
     if (notes) parts.push(`📝 Notes: <i>${htmlEscape(notes)}</i>`);
     parts.push("");
-    parts.push(`<i>Chat starting now. You'll get a follow-up ping with the full quote + draft text if they engage. If no quote ping follows within ~30 min, they bailed.</i>`);
+    parts.push(`<i>Chat starting now. You'll get a follow-up ping with the full quote + draft text if they engage. If they go quiet for 3 min mid-chat you'll get a 🕒 stale ping with the partial transcript.</i>`);
 
     await sendTelegramNotification(parts.join("\n"));
+    // Auto-attach a vCard so Luke can tap once on iPhone to add to Contacts.
+    sendTelegramVCard(formData).catch(err => console.error("[vcard lead] error:", err));
   } catch (err) {
     console.error("[notifyLead] error:", err);
   }
