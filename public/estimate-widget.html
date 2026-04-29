@@ -1055,6 +1055,17 @@
     const dedupKey = (opts && opts.dedup) ? `${eventType}:${opts.dedup}` : eventType;
     if (_firedEvents.has(dedupKey)) return;
     _firedEvents.add(dedupKey);
+    // Fire matching Meta Pixel standard events so the ad algorithm sees the
+    // funnel too (not just our internal Airtable log). fbq is loaded from
+    // the WPCode header snippet — guard so the widget doesn't crash if
+    // the pixel is ever removed.
+    try {
+      if (typeof fbq === 'function') {
+        if      (eventType === 'CTA click')      fbq('track', 'InitiateCheckout');
+        else if (eventType === 'Form submitted') fbq('track', 'Lead');
+        else if (eventType === 'Booked')         fbq('track', 'Schedule');
+      }
+    } catch {}
     const body = JSON.stringify({ event_type: eventType, sessionId, attribution, notes: opts && opts.notes });
     try {
       if (navigator.sendBeacon) {
@@ -1296,6 +1307,13 @@
 
     // Tear the modal down so the transition + chat take over the page.
     lpCloseModal();
+
+    // Tell Meta this visitor became a lead. Standard "Lead" event is what
+    // ad campaigns optimize toward for service businesses — fires once per
+    // session (lpSubmit only runs on a clean form submission).
+    try {
+      if (typeof fbq === 'function') fbq('track', 'Lead', { content_name: 'Estimate form submit' });
+    } catch {}
 
     // Fire the first AI call in parallel with the transition screen.
     pendingFirstResponse = fetch(ESTIMATE_URL, {
