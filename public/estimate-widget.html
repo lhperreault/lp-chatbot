@@ -1031,6 +1031,55 @@
   }
   const attribution = captureAttribution();
 
+  // ── Session ID + funnel tracking ───────────────────────────────────────
+  // One UUID per browser session — lets the marketing dashboard thread
+  // page-view → CTA → form-step-2 → form-submit events for the same
+  // visitor. Server-side events (Form submitted, Quote sent, Booked) get
+  // the same sessionId via the chat request body.
+  const SESSION_KEY = 'lp_estimate_session_v1';
+  function getOrCreateSessionId() {
+    try {
+      const cached = sessionStorage.getItem(SESSION_KEY);
+      if (cached) return cached;
+    } catch {}
+    const id = (crypto.randomUUID && crypto.randomUUID()) ||
+      (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+    try { sessionStorage.setItem(SESSION_KEY, id); } catch {}
+    return id;
+  }
+  const sessionId = getOrCreateSessionId();
+  const TRACK_URL = ESTIMATE_URL.replace(/\/api\/estimate$/, '/api/track');
+  // Dedup helper so a noisy event (e.g. focus on every input) only fires once.
+  const _firedEvents = new Set();
+  function lpTrack(eventType, opts) {
+    const dedupKey = (opts && opts.dedup) ? `${eventType}:${opts.dedup}` : eventType;
+    if (_firedEvents.has(dedupKey)) return;
+    _firedEvents.add(dedupKey);
+    const body = JSON.stringify({ event_type: eventType, sessionId, attribution, notes: opts && opts.notes });
+    try {
+      if (navigator.sendBeacon) {
+        if (navigator.sendBeacon(TRACK_URL, new Blob([body], { type: 'application/json' }))) return;
+      }
+    } catch {}
+    fetch(TRACK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body, keepalive: true,
+    }).catch(() => { _firedEvents.delete(dedupKey); /* allow retry */ });
+  }
+  // Fire on widget mount — the visitor reached the page and saw the form.
+  lpTrack('Page view');
+  lpTrack('Form step 1');
+  // Fire on the first interaction with the form (focus an input or click a
+  // service card). Captures intent before they bail.
+  ['iName','iPhone','iEmail','iAddr','iNotes'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('focus', function () { lpTrack('CTA click', { dedup: 'first' }); }, { once: false });
+  });
+  document.querySelectorAll('#lpWrap .lp-svc, #lpWrap [data-lp-svc], #lpWrap .lp-step-tab').forEach(function (el) {
+    el.addEventListener('click', function () { lpTrack('CTA click', { dedup: 'first' }); }, { once: false });
+  });
+
   // ── Ad-click ping ──────────────────────────────────────────────────────
   // Fires once per browser session when the landing page URL carries a
   // paid-ad signature (utm_source, gclid, fbclid). Organic/direct traffic
@@ -1204,6 +1253,7 @@
     }
     hideErr('e' + step);
     setStep(step + 1);
+    if (step === 1) lpTrack('Form step 2');
   };
   window.lpBack = function (step) { setStep(step - 1); };
   // Allow tab clicks to jump directly between steps (only forward if step 1 valid)
@@ -1219,6 +1269,7 @@
     }
     hideErr('e1'); hideErr('e2');
     setStep(n);
+    if (n === 2) lpTrack('Form step 2');
   };
 
   window.lpToggle = function (el) {
@@ -1250,7 +1301,7 @@
     pendingFirstResponse = fetch(ESTIMATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [], formData: fd, clientId: null, jobId: null, attribution })
+      body: JSON.stringify({ messages: [], formData: fd, clientId: null, jobId: null, attribution, sessionId })
     }).then(r => r.json()).catch(err => ({ error: err.message }));
 
     runTransition();
@@ -1359,7 +1410,7 @@
       const res = await fetch(ESTIMATE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, formData: fd, clientId, jobId, attribution })
+        body: JSON.stringify({ messages: history, formData: fd, clientId, jobId, attribution, sessionId })
       });
       const data = await res.json();
       typing.classList.remove('show');

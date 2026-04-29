@@ -13,6 +13,7 @@ function setCors(res) {
 const AT_CLIENTS       = "Clients";
 const AT_JOBS          = "Jobs";
 const AT_CONVERSATIONS = "Conversations";
+const AT_FUNNEL        = "Funnel events";
 // Match chat.js so Airtable single-select options don't reject writes.
 // If you later add a new option like "Website estimate form" to your
 // Source / Channel / Source channel fields, you can split these out.
@@ -112,6 +113,7 @@ async function createJob(clientId, args, conversationLog) {
       "Quote":             args.quote            || "",
       "Quote date":        new Date().toISOString().split("T")[0],
       "Lead status":       "Quoted",
+      "Pipeline stage":    "💬 Quoted",
       "Source channel":    SOURCE_CHANNEL,
     };
     if (typeof args.quoteAmount === "number") fields["Quote amount"]     = args.quoteAmount;
@@ -133,6 +135,36 @@ async function updateJob(jobId, fields) {
     if (data.error) return { error: data.error.message };
     return { jobId: data.id };
   } catch (err) { return { error: err.message }; }
+}
+
+// Server-side funnel event logger. Counterpart to /api/track (which the
+// widget calls for client-side events). Backend writes the moments it
+// owns: Form submitted, Chat engaged, Quote sent, Booked. Errors are
+// swallowed — analytics must never block the customer experience.
+async function logFunnelEvent({ eventType, attribution, sessionId, clientId, jobId, notes }) {
+  try {
+    if (!eventType) return;
+    const d = new Date();
+    const ymd = d.toISOString().slice(0, 10).replace(/-/g, "");
+    const hm  = d.toISOString().slice(11, 16).replace(":", "");
+    const r   = Math.random().toString(36).slice(2, 6);
+    const fields = {
+      "Event ID":     `${ymd}-${hm}-${r}`,
+      "Event type":   eventType,
+      "Timestamp":    d.toISOString(),
+      "UTM source":   (attribution?.utm_source   || "").slice(0, 200),
+      "UTM campaign": (attribution?.utm_campaign || "").slice(0, 200),
+    };
+    if (attribution?.referrer)    fields["Referrer"]    = String(attribution.referrer).slice(0, 500);
+    if (attribution?.landing_url) fields["Landing URL"] = String(attribution.landing_url).slice(0, 500);
+    if (sessionId) fields["Session ID"] = String(sessionId).slice(0, 64);
+    if (clientId)  fields["Client"]    = [clientId];
+    if (jobId)     fields["Job"]       = [jobId];
+    if (notes)     fields["Notes"]     = String(notes).slice(0, 1000);
+    await fetch(airtableUrl(AT_FUNNEL), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
+  } catch (err) {
+    console.error("[logFunnelEvent] error:", err);
+  }
 }
 
 async function logConversation({ clientId, jobId, direction, author, message, intent }) {
@@ -894,6 +926,7 @@ async function runTool(name, args, state, formData, originalMessages) {
         state.quoteJustSent = true;
         // Fire-and-forget Telegram notification so the AI isn't blocked.
         notifyQuote(state, formData, originalMessages).catch(err => console.error("[notifyQuote] fire-and-forget error:", err));
+        logFunnelEvent({ eventType: "Quote sent", attribution: state.attribution, sessionId: state.sessionId, clientId: state.clientId, jobId: state.jobId, notes: args.serviceType }).catch(() => {});
       }
       return r;
     }
@@ -904,12 +937,13 @@ async function runTool(name, args, state, formData, originalMessages) {
   if (name === "book_appointment")             return await bookAppointment(args);
   if (name === "confirm_booking") {
     if (!state.jobId) return { error: "No jobId" };
-    const r = await updateJob(state.jobId, { "Booking date": args.bookingDate, "Lead status": "Booked" });
+    const r = await updateJob(state.jobId, { "Booking date": args.bookingDate, "Lead status": "Booked", "Pipeline stage": "📅 Booked" });
     if (state.clientId && args.customerConfirmText) {
       await logConversation({ clientId: state.clientId, jobId: state.jobId, direction: "Inbound", author: "Customer", message: args.customerConfirmText, intent: "booking_confirmed" });
     }
     // Fire-and-forget booking notification.
     notifyBooking(state, formData, args.bookingDate, originalMessages).catch(err => console.error("[notifyBooking] fire-and-forget error:", err));
+    logFunnelEvent({ eventType: "Booked", attribution: state.attribution, sessionId: state.sessionId, clientId: state.clientId, jobId: state.jobId, notes: `Booking date: ${args.bookingDate}` }).catch(() => {});
     return r;
   }
   return { error: "Unknown tool" };
@@ -922,7 +956,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST")    return res.status(405).json({ error: "Method not allowed" });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
 
-  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null, partial = false, adClick = false, attribution = null } = req.body;
+  const { messages = [], formData = {}, clientId: incomingClientId = null, jobId: incomingJobId = null, partial = false, adClick = false, attribution = null, sessionId = null } = req.body;
 
   // ── AD CLICK ping branch ─────────────────────────────────────────────────
   // Fires when the widget detects the page was loaded from a tagged ad URL
@@ -986,7 +1020,7 @@ export default async function handler(req, res) {
   }
 
   const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
-  const state = { clientId: incomingClientId, jobId: incomingJobId, quoteJustSent: false, currentAssistantText: "" };
+  const state = { clientId: incomingClientId, jobId: incomingJobId, quoteJustSent: false, currentAssistantText: "", attribution, sessionId };
   const latestUserMessage = [...messages].reverse().find(m => m.role === "user")?.content || null;
   const isFirstTurn = messages.length === 0;
 
@@ -1027,6 +1061,10 @@ export default async function handler(req, res) {
     // Worst case if a customer resubmits: Luke gets two 📥 pings — that's
     // fine, the second one means "this person came back."
     notifyLead(formData, attribution).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
+    logFunnelEvent({ eventType: "Form submitted", attribution, sessionId, clientId: state.clientId }).catch(() => {});
+  } else if (messages.filter(m => m.role === "user").length === 1) {
+    // First customer reply after the bot's greeting → chat is engaged.
+    logFunnelEvent({ eventType: "Chat engaged", attribution, sessionId, clientId: state.clientId, jobId: state.jobId }).catch(() => {});
   }
 
   // Two-block system prompt:

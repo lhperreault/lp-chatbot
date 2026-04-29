@@ -17,6 +17,9 @@
     },
     "api/cron-stale-alerts.js": {
       "maxDuration": 30
+    },
+    "api/track.js": {
+      "maxDuration": 10
     }
   },
   "crons": [
