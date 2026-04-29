@@ -1026,6 +1026,23 @@
       landing_url:  (window.location.href || '').slice(0, 500),
       firstSeenAt:  new Date().toISOString(),
     };
+    // Referrer-based fallback: if the visitor lands without explicit UTM
+    // tags (Yelp's outbound redirect strips them; organic Google never has
+    // them), infer the source from document.referrer. Better an inferred
+    // tag than "Website" everywhere.
+    if (!attr.utm_source && attr.referrer) {
+      const ref = attr.referrer.toLowerCase();
+      if      (/yelp\.com/.test(ref))               { attr.utm_source = 'yelp';      attr.utm_medium = attr.utm_medium || 'referral'; }
+      else if (/(facebook|fb)\.com/.test(ref))      { attr.utm_source = 'facebook';  attr.utm_medium = attr.utm_medium || 'social'; }
+      else if (/instagram\.com/.test(ref))          { attr.utm_source = 'instagram'; attr.utm_medium = attr.utm_medium || 'social'; }
+      else if (/google\.[a-z.]+/.test(ref))         { attr.utm_source = 'google';    attr.utm_medium = attr.utm_medium || 'organic'; }
+      else if (/bing\.com/.test(ref))               { attr.utm_source = 'bing';      attr.utm_medium = attr.utm_medium || 'organic'; }
+      else if (/duckduckgo\.com/.test(ref))         { attr.utm_source = 'duckduckgo';attr.utm_medium = attr.utm_medium || 'organic'; }
+      else if (/nextdoor\.com/.test(ref))           { attr.utm_source = 'nextdoor';  attr.utm_medium = attr.utm_medium || 'social'; }
+      else if (/(t\.co|twitter|x\.com)/.test(ref))  { attr.utm_source = 'twitter';   attr.utm_medium = attr.utm_medium || 'social'; }
+      else if (/linkedin\.com/.test(ref))           { attr.utm_source = 'linkedin';  attr.utm_medium = attr.utm_medium || 'social'; }
+      else if (/(tiktok|youtube)\.com/.test(ref))   { attr.utm_source = ref.includes('tiktok') ? 'tiktok' : 'youtube'; attr.utm_medium = attr.utm_medium || 'social'; }
+    }
     try { sessionStorage.setItem(ATTR_KEY, JSON.stringify(attr)); } catch {}
     return Object.assign({}, attr, { isFreshCapture: true });
   }
