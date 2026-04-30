@@ -103,19 +103,45 @@ function attributionLabel(attribution) {
   return "direct";
 }
 
-async function createJob(clientId, args, conversationLog) {
+// Build a readable Job ID like "John – House wash". Truncates a long
+// service list (e.g. "House, Deck, Driveway") for the stub job's title.
+function makeJobId(customerName, serviceType) {
+  const name = (customerName || "Lead").trim();
+  let svc = String(serviceType || "Estimate").trim();
+  if (svc.length > 50) svc = svc.slice(0, 47) + "…";
+  return `${name} – ${svc}`;
+}
+
+// createJob is used in two places:
+//  1) STUB JOB at form-submit time — opts.stage = "🆕 New lead",
+//     args.serviceType = the comma-joined list of services from the form,
+//     no quote yet. Card appears in Kanban so leads who bail mid-chat
+//     are visible.
+//  2) QUOTED JOB when the bot reveals a price — opts.stage defaults to
+//     "💬 Quoted" and args.quote / quoteAmount are filled.
+async function createJob(clientId, args, conversationLog, customerName, opts = {}) {
   try {
     if (!clientId) return { error: "clientId required" };
+    const stage = opts.stage || "💬 Quoted";
+    // Lead status is the legacy field — only has options Quoted/Booked/
+    // Completed/Lost/Follow up/Cold (no "Lead"). For stub jobs we leave it
+    // blank; only set it once the Job advances to a stage that maps cleanly.
+    const leadStatus =
+      opts.leadStatus !== undefined ? opts.leadStatus :
+      (stage === "💬 Quoted" ? "Quoted" :
+       stage === "📅 Booked" ? "Booked" :
+       null);
     const fields = {
       "Client":            [clientId],
+      "Job ID":            makeJobId(customerName, args.serviceType),
       "Service type":      args.serviceType      || "",
       "Property snapshot": args.propertySnapshot || "",
       "Quote":             args.quote            || "",
       "Quote date":        new Date().toISOString().split("T")[0],
-      "Lead status":       "Quoted",
-      "Pipeline stage":    "💬 Quoted",
+      "Pipeline stage":    stage,
       "Source channel":    SOURCE_CHANNEL,
     };
+    if (leadStatus) fields["Lead status"] = leadStatus;
     if (typeof args.quoteAmount === "number") fields["Quote amount"]     = args.quoteAmount;
     if (args.reasoning)   fields["Reasoning"]        = args.reasoning;
     if (args.concerns)    fields["Concerns"]          = args.concerns;
@@ -920,9 +946,31 @@ async function runTool(name, args, state, formData, originalMessages) {
     }
     if (state.clientId) {
       const convoLog = JSON.stringify([...originalMessages, { role: "assistant", content: state.currentAssistantText || "" }]);
-      const r = await createJob(state.clientId, args, convoLog);
+      let r;
+      // If a stub Job was created at form-submit time, the FIRST quote
+      // upgrades that stub instead of creating a duplicate. Subsequent
+      // quotes (multi-service estimates) still create new Jobs.
+      if (state.jobId && state.jobIsStub) {
+        const updateFields = {
+          "Job ID":            makeJobId(formData.firstName, args.serviceType),
+          "Service type":      args.serviceType      || "",
+          "Property snapshot": args.propertySnapshot || "",
+          "Quote":             args.quote            || "",
+          "Quote date":        new Date().toISOString().split("T")[0],
+          "Lead status":       "Quoted",
+          "Pipeline stage":    "💬 Quoted",
+          "Conversation log":  convoLog,
+        };
+        if (typeof args.quoteAmount === "number") updateFields["Quote amount"] = args.quoteAmount;
+        if (args.reasoning)   updateFields["Reasoning"] = args.reasoning;
+        if (args.concerns)    updateFields["Concerns"]   = args.concerns;
+        r = await updateJob(state.jobId, updateFields);
+        if (r.jobId) state.jobIsStub = false; // stub consumed; next save_quote_job creates a new Job
+      } else {
+        r = await createJob(state.clientId, args, convoLog, formData.firstName);
+        if (r.jobId) state.jobId = r.jobId;
+      }
       if (r.jobId) {
-        state.jobId = r.jobId;
         state.quoteJustSent = true;
         // Fire-and-forget Telegram notification so the AI isn't blocked.
         notifyQuote(state, formData, originalMessages).catch(err => console.error("[notifyQuote] fire-and-forget error:", err));
@@ -1062,6 +1110,33 @@ export default async function handler(req, res) {
     // fine, the second one means "this person came back."
     notifyLead(formData, attribution).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
     logFunnelEvent({ eventType: "Form submitted", attribution, sessionId, clientId: state.clientId }).catch(() => {});
+
+    // Create a STUB Job in "🆕 New lead" stage so leads who bail mid-chat
+    // (or never engage) still appear in Luke's Kanban CRM. The first call
+    // to save_quote_job will UPGRADE this stub instead of duplicating it.
+    if (state.clientId && !state.jobId) {
+      const services = Array.isArray(formData.services) && formData.services.length
+        ? formData.services.join(", ")
+        : (formData.services || "Estimate request");
+      try {
+        const stub = await createJob(
+          state.clientId,
+          { serviceType: services, propertySnapshot: formData.address || "", quote: "Pending — bot quoting in progress", quoteAmount: 0 },
+          null,
+          formData.firstName,
+          { stage: "🆕 New lead", leadStatus: null }
+        );
+        if (stub?.jobId) {
+          state.jobId      = stub.jobId;
+          state.jobIsStub  = true;
+          console.log("[estimate] stub job created", { jobId: stub.jobId, services });
+        } else if (stub?.error) {
+          console.log("[estimate] stub job create error:", stub.error);
+        }
+      } catch (err) {
+        console.error("[estimate] stub job threw:", err);
+      }
+    }
   } else if (messages.filter(m => m.role === "user").length === 1) {
     // First customer reply after the bot's greeting → chat is engaged.
     logFunnelEvent({ eventType: "Chat engaged", attribution, sessionId, clientId: state.clientId, jobId: state.jobId }).catch(() => {});
