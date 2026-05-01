@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LP Marketing Dashboard</title>
+<link rel="icon" href="/logo.png" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0e1117;
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid #21262d;
+    flex-wrap: wrap; gap: 12px;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .subtitle { color: #8b949e; font-size: 12px; margin-top: 2px; }
+  .range-toggle { display: flex; gap: 4px; background: #161b22; padding: 3px; border-radius: 8px; }
+  .range-toggle button {
+    background: transparent; color: #8b949e; border: 0;
+    padding: 6px 14px; border-radius: 6px; font-size: 13px;
+    cursor: pointer; font-weight: 500;
+  }
+  .range-toggle button.active { background: #2f81f7; color: #fff; }
+  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .kpi {
+    background: #161b22; border: 1px solid #21262d; border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .kpi-label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 26px; font-weight: 700; margin-top: 4px; }
+  .kpi-change { font-size: 12px; margin-top: 4px; color: #8b949e; }
+  .kpi-change.up { color: #3fb950; }
+  .kpi-change.down { color: #f85149; }
+
+  .row { display: grid; gap: 16px; margin-bottom: 16px; }
+  .row-2 { grid-template-columns: 1fr 1fr; }
+  .row-2-wide-right { grid-template-columns: 1fr 1.3fr; }
+  @media (max-width: 800px) {
+    .row-2, .row-2-wide-right { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: #161b22; border: 1px solid #21262d; border-radius: 10px;
+    padding: 16px; min-height: 280px;
+  }
+  .card h2 {
+    margin: 0 0 12px; font-size: 13px; font-weight: 600;
+    color: #c9d1d9; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  canvas { max-height: 280px; }
+
+  .list-item {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 10px 0; border-bottom: 1px solid #21262d; gap: 12px; font-size: 13px;
+  }
+  .list-item:last-child { border-bottom: 0; }
+  .list-item .meta { color: #8b949e; font-size: 11px; margin-top: 2px; }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    background: #21262d; color: #c9d1d9; font-size: 11px; font-weight: 500;
+  }
+  .pill.cold { background: #3a1d1d; color: #ffa198; }
+  .pill.event { background: #1f3a52; color: #79c0ff; }
+
+  .empty { color: #8b949e; font-size: 13px; padding: 12px 0; }
+  #last-updated { color: #6e7681; font-size: 11px; margin-top: 12px; text-align: right; }
+  .error-banner {
+    background: #3a1d1d; color: #ffa198; padding: 12px 16px;
+    border-radius: 8px; margin-bottom: 16px; font-size: 13px;
+    border: 1px solid #5a2a2a;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>LP Marketing Dashboard</h1>
+    <div class="subtitle">Live from Airtable · auto-refreshes every 5 min</div>
+  </div>
+  <div class="range-toggle" id="range-toggle">
+    <button data-days="7" class="active">7d</button>
+    <button data-days="30">30d</button>
+    <button data-days="90">90d</button>
+  </div>
+</header>
+
+<main>
+  <div id="error" style="display:none" class="error-banner"></div>
+
+  <div class="kpi-grid" id="kpi-grid">
+    <!-- populated by JS -->
+  </div>
+
+  <div class="row row-2">
+    <div class="card">
+      <h2>Funnel drop-off</h2>
+      <canvas id="chart-funnel"></canvas>
+    </div>
+    <div class="card">
+      <h2>Form submits by source (12 wk)</h2>
+      <canvas id="chart-source"></canvas>
+    </div>
+  </div>
+
+  <div class="row row-2">
+    <div class="card">
+      <h2>Yelp weekly trend</h2>
+      <canvas id="chart-yelp"></canvas>
+    </div>
+    <div class="card">
+      <h2>🥶 Cold leads — needs another nudge</h2>
+      <div id="cold-leads"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>Recent activity (last 24h)</h2>
+      <div id="recent-activity"></div>
+    </div>
+  </div>
+
+  <div id="last-updated"></div>
+</main>
+
+<script>
+  const KPI_DEFS = [
+    { key: "pageViews",   label: "Page views",     fmt: n => n },
+    { key: "ctaClicks",   label: "CTA clicks",     fmt: n => n },
+    { key: "formSubmits", label: "Form submits",   fmt: n => n },
+    { key: "chatEngaged", label: "Chat engaged",   fmt: n => n },
+    { key: "quotesSent",  label: "Quotes sent",    fmt: n => n },
+    { key: "outreach",    label: "Outreach",       fmt: n => n },
+    { key: "responses",   label: "Responses",      fmt: n => n },
+    { key: "replyRate",   label: "Reply rate",     fmt: n => n == null ? "—" : `${n}%` },
+    { key: "booked",      label: "Booked",         fmt: n => n },
+    { key: "yelpSpend",   label: "Yelp $ this wk", fmt: n => `$${n.toFixed(0)}` },
+    { key: "yelpCpl",     label: "Yelp CPL",       fmt: n => `$${n.toFixed(2)}` },
+  ];
+
+  const charts = {};
+
+  // querystring-passthrough so /?key=foo&days=30 propagates to the API
+  const qs = new URLSearchParams(location.search);
+  const apiKey = qs.get("key") || "";
+  let currentDays = parseInt(qs.get("days") || "7", 10) || 7;
+  // ?api=https://lppressurewash.com lets the preview hit a deployed backend
+  // (defaults to same-origin once deployed to Vercel)
+  const apiBase = (qs.get("api") || "").replace(/\/$/, "");
+
+  function setActiveRange(d) {
+    document.querySelectorAll("#range-toggle button").forEach(b => {
+      b.classList.toggle("active", parseInt(b.dataset.days, 10) === d);
+    });
+  }
+  setActiveRange(currentDays);
+
+  document.getElementById("range-toggle").addEventListener("click", e => {
+    const btn = e.target.closest("button[data-days]");
+    if (!btn) return;
+    currentDays = parseInt(btn.dataset.days, 10);
+    setActiveRange(currentDays);
+    load();
+  });
+
+  function renderKPIs(kpis) {
+    const grid = document.getElementById("kpi-grid");
+    grid.innerHTML = "";
+    for (const def of KPI_DEFS) {
+      const k = kpis[def.key] || { value: 0, change: null };
+      const v = k.value == null ? "—" : def.fmt(k.value);
+      let changeHtml = "";
+      if (k.change != null && def.key !== "replyRate") {
+        const cls = k.change > 0 ? "up" : k.change < 0 ? "down" : "";
+        const arrow = k.change > 0 ? "▲" : k.change < 0 ? "▼" : "·";
+        changeHtml = `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change)}% vs prior</div>`;
+      } else if (def.key === "replyRate" && k.change != null) {
+        const cls = k.change > 0 ? "up" : k.change < 0 ? "down" : "";
+        const arrow = k.change > 0 ? "▲" : k.change < 0 ? "▼" : "·";
+        changeHtml = `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change)}pp vs prior</div>`;
+      } else {
+        changeHtml = `<div class="kpi-change">no prior data</div>`;
+      }
+      grid.insertAdjacentHTML("beforeend", `
+        <div class="kpi">
+          <div class="kpi-label">${def.label}</div>
+          <div class="kpi-value">${v}</div>
+          ${changeHtml}
+        </div>
+      `);
+    }
+  }
+
+  function makeOrUpdateChart(id, config) {
+    if (charts[id]) {
+      charts[id].data = config.data;
+      charts[id].options = config.options;
+      charts[id].update();
+    } else {
+      charts[id] = new Chart(document.getElementById(id), config);
+    }
+  }
+
+  const CHART_DEFAULTS = {
+    color: "#c9d1d9",
+    grid: "#21262d",
+    tickColor: "#8b949e",
+  };
+
+  function renderFunnel(funnel) {
+    const labels = funnel.map(f => f.stage);
+    const data = funnel.map(f => f.count);
+    makeOrUpdateChart("chart-funnel", {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "Count",
+          data,
+          backgroundColor: "#2f81f7",
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: CHART_DEFAULTS.tickColor, maxRotation: 60, minRotation: 30 }, grid: { color: CHART_DEFAULTS.grid } },
+          y: { ticks: { color: CHART_DEFAULTS.tickColor, precision: 0 }, grid: { color: CHART_DEFAULTS.grid }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  const SOURCE_COLORS = ["#79c0ff", "#3fb950", "#f0883e", "#a371f7", "#f85149", "#d2a8ff", "#56d364", "#ff7b72"];
+
+  function renderSource(leadsBySource) {
+    const { weeks, series } = leadsBySource;
+    const datasets = Object.entries(series).map(([name, data], i) => ({
+      label: name || "direct",
+      data,
+      borderColor: SOURCE_COLORS[i % SOURCE_COLORS.length],
+      backgroundColor: SOURCE_COLORS[i % SOURCE_COLORS.length] + "33",
+      tension: 0.3,
+      borderWidth: 2,
+    }));
+    makeOrUpdateChart("chart-source", {
+      type: "line",
+      data: { labels: weeks, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: CHART_DEFAULTS.color, font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: CHART_DEFAULTS.tickColor }, grid: { color: CHART_DEFAULTS.grid } },
+          y: { ticks: { color: CHART_DEFAULTS.tickColor, precision: 0 }, grid: { color: CHART_DEFAULTS.grid }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  function renderYelp(trend) {
+    const labels = trend.map(t => t.weekEnding);
+    makeOrUpdateChart("chart-yelp", {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          { label: "Leads",     data: trend.map(t => t.leads),   borderColor: "#3fb950", backgroundColor: "#3fb95033", tension: 0.3, yAxisID: "y", borderWidth: 2 },
+          { label: "Ad spend",  data: trend.map(t => t.adSpend), borderColor: "#f0883e", backgroundColor: "#f0883e33", tension: 0.3, yAxisID: "y1", borderWidth: 2 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: CHART_DEFAULTS.color, font: { size: 11 } } } },
+        scales: {
+          x:  { ticks: { color: CHART_DEFAULTS.tickColor }, grid: { color: CHART_DEFAULTS.grid } },
+          y:  { type: "linear", position: "left",  ticks: { color: "#3fb950", precision: 0 }, grid: { color: CHART_DEFAULTS.grid }, beginAtZero: true, title: { display: true, text: "Leads", color: "#3fb950" } },
+          y1: { type: "linear", position: "right", ticks: { color: "#f0883e", callback: v => `$${v}` }, grid: { display: false }, beginAtZero: true, title: { display: true, text: "Ad spend", color: "#f0883e" } },
+        },
+      },
+    });
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+  function daysSince(iso) {
+    if (!iso) return null;
+    return Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function renderCold(leads) {
+    const el = document.getElementById("cold-leads");
+    if (!leads.length) { el.innerHTML = `<div class="empty">No cold leads. 🎉</div>`; return; }
+    el.innerHTML = leads.map(j => {
+      const since = daysSince(j.lastTouch);
+      const sinceTxt = since == null ? "no last-touch" : `${since}d since last touch`;
+      return `
+        <div class="list-item">
+          <div>
+            <div><strong>${escapeHtml(j.clientName)}</strong> · ${escapeHtml(j.service)}</div>
+            <div class="meta">${escapeHtml(j.pipeline || "")} · ${sinceTxt}${j.notes ? ` · ${escapeHtml(j.notes.slice(0, 80))}${j.notes.length > 80 ? "…" : ""}` : ""}</div>
+          </div>
+          <div><span class="pill cold">${j.attempts}× tried</span></div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderRecent(rows) {
+    const el = document.getElementById("recent-activity");
+    if (!rows.length) { el.innerHTML = `<div class="empty">No activity in the last 24h.</div>`; return; }
+    el.innerHTML = rows.map(r => `
+      <div class="list-item">
+        <div>
+          <span class="pill event">${escapeHtml(r.eventType)}</span>
+          ${r.source ? `<span class="meta" style="margin-left:8px">via ${escapeHtml(r.source)}</span>` : ""}
+          ${r.notes ? `<div class="meta">${escapeHtml(r.notes.slice(0, 120))}${r.notes.length > 120 ? "…" : ""}</div>` : ""}
+        </div>
+        <div class="meta">${fmtDate(r.time)}</div>
+      </div>
+    `).join("");
+  }
+
+  async function load() {
+    const errEl = document.getElementById("error");
+    errEl.style.display = "none";
+    try {
+      const params = new URLSearchParams({ days: String(currentDays) });
+      if (apiKey) params.set("key", apiKey);
+      const url = `${apiBase}/api/dashboard-data?${params.toString()}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      renderKPIs(data.kpis);
+      renderFunnel(data.funnel);
+      renderSource(data.leadsBySource);
+      renderYelp(data.yelpTrend);
+      renderCold(data.coldLeads);
+      renderRecent(data.recentActivity);
+      document.getElementById("last-updated").textContent = `updated ${fmtDate(data.generatedAt)}`;
+    } catch (err) {
+      errEl.style.display = "block";
+      errEl.textContent = `Failed to load: ${err.message}`;
+    }
+  }
+
+  load();
+  setInterval(load, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>

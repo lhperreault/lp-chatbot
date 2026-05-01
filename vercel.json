@@ -20,6 +20,9 @@
     },
     "api/track.js": {
       "maxDuration": 10
+    },
+    "api/dashboard-data.js": {
+      "maxDuration": 30
     }
   },
   "crons": [
