@@ -31,37 +31,51 @@
   .range-toggle button.active { background: #2f81f7; color: #fff; }
   main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 
+  .section-label {
+    font-size: 11px; font-weight: 600; color: #8b949e;
+    text-transform: uppercase; letter-spacing: 0.8px;
+    margin: 4px 0 8px;
+  }
+
   .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px; margin-bottom: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; margin-bottom: 18px;
   }
   .kpi {
     background: #161b22; border: 1px solid #21262d; border-radius: 10px;
-    padding: 14px 16px;
+    padding: 12px 14px;
   }
-  .kpi-label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .kpi-value { font-size: 26px; font-weight: 700; margin-top: 4px; }
-  .kpi-change { font-size: 12px; margin-top: 4px; color: #8b949e; }
+  .kpi.primary { background: #142233; border-color: #2f81f7; }
+  .kpi-label { color: #8b949e; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 24px; font-weight: 700; margin-top: 3px; }
+  .kpi.primary .kpi-value { color: #79c0ff; }
+  .kpi-change { font-size: 11px; margin-top: 4px; color: #8b949e; }
   .kpi-change.up { color: #3fb950; }
   .kpi-change.down { color: #f85149; }
 
   .row { display: grid; gap: 16px; margin-bottom: 16px; }
   .row-2 { grid-template-columns: 1fr 1fr; }
-  .row-2-wide-right { grid-template-columns: 1fr 1.3fr; }
+  .row-3 { grid-template-columns: 1fr 1.4fr; }
   @media (max-width: 800px) {
-    .row-2, .row-2-wide-right { grid-template-columns: 1fr; }
+    .row-2, .row-3 { grid-template-columns: 1fr; }
   }
 
   .card {
     background: #161b22; border: 1px solid #21262d; border-radius: 10px;
-    padding: 16px; min-height: 280px;
+    padding: 16px; min-height: 240px;
   }
   .card h2 {
     margin: 0 0 12px; font-size: 13px; font-weight: 600;
     color: #c9d1d9; text-transform: uppercase; letter-spacing: 0.5px;
   }
   canvas { max-height: 280px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: 0; }
 
   .list-item {
     display: flex; justify-content: space-between; align-items: flex-start;
@@ -73,8 +87,11 @@
     display: inline-block; padding: 2px 8px; border-radius: 10px;
     background: #21262d; color: #c9d1d9; font-size: 11px; font-weight: 500;
   }
-  .pill.cold { background: #3a1d1d; color: #ffa198; }
-  .pill.event { background: #1f3a52; color: #79c0ff; }
+  .pill.cold       { background: #3a1d1d; color: #ffa198; }
+  .pill.event      { background: #1f3a52; color: #79c0ff; }
+  .pill.marketing  { background: #1f3a52; color: #79c0ff; }
+  .pill.organic    { background: #1d3a2c; color: #7ee787; }
+  .pill.other      { background: #21262d; color: #c9d1d9; }
 
   .empty { color: #8b949e; font-size: 13px; padding: 12px 0; }
   #last-updated { color: #6e7681; font-size: 11px; margin-top: 12px; text-align: right; }
@@ -102,13 +119,26 @@
 <main>
   <div id="error" style="display:none" class="error-banner"></div>
 
-  <div class="kpi-grid" id="kpi-grid">
-    <!-- populated by JS -->
+  <div class="section-label">Business</div>
+  <div class="kpi-grid" id="kpi-business"></div>
+
+  <div class="section-label">Web inbound funnel · outreach · Yelp</div>
+  <div class="kpi-grid" id="kpi-secondary"></div>
+
+  <div class="row row-3">
+    <div class="card">
+      <h2>Bookings by channel</h2>
+      <canvas id="chart-mix"></canvas>
+    </div>
+    <div class="card">
+      <h2>Channel performance</h2>
+      <div id="channel-table"></div>
+    </div>
   </div>
 
   <div class="row row-2">
     <div class="card">
-      <h2>Funnel drop-off</h2>
+      <h2>Web inbound funnel</h2>
       <canvas id="chart-funnel"></canvas>
     </div>
     <div class="card">
@@ -123,12 +153,16 @@
       <canvas id="chart-yelp"></canvas>
     </div>
     <div class="card">
-      <h2>🥶 Cold leads — needs another nudge</h2>
-      <div id="cold-leads"></div>
+      <h2>🔁 Repeat &amp; past-customer activity</h2>
+      <div id="repeat-activity"></div>
     </div>
   </div>
 
-  <div class="row">
+  <div class="row row-2">
+    <div class="card">
+      <h2>🥶 Cold leads — needs another nudge</h2>
+      <div id="cold-leads"></div>
+    </div>
     <div class="card">
       <h2>Recent activity (last 24h)</h2>
       <div id="recent-activity"></div>
@@ -139,28 +173,30 @@
 </main>
 
 <script>
-  const KPI_DEFS = [
+  const BUSINESS_KPIS = [
+    { key: "booked",          label: "Booked",        primary: true,  fmt: n => n },
+    { key: "bookedDollars",   label: "$ Booked",      primary: true,  fmt: n => `$${n.toLocaleString()}` },
+    { key: "quoted",          label: "Quoted",        fmt: n => n },
+    { key: "marketingBooked", label: "Marketing booked", fmt: n => n },
+    { key: "organicBooked",   label: "Organic booked",   fmt: n => n },
+    { key: "repeatBooked",    label: "Repeat customers", fmt: n => n },
+  ];
+  const SECONDARY_KPIS = [
     { key: "pageViews",   label: "Page views",     fmt: n => n },
-    { key: "ctaClicks",   label: "CTA clicks",     fmt: n => n },
     { key: "formSubmits", label: "Form submits",   fmt: n => n },
     { key: "chatEngaged", label: "Chat engaged",   fmt: n => n },
-    { key: "quotesSent",  label: "Quotes sent",    fmt: n => n },
     { key: "outreach",    label: "Outreach",       fmt: n => n },
     { key: "responses",   label: "Responses",      fmt: n => n },
-    { key: "replyRate",   label: "Reply rate",     fmt: n => n == null ? "—" : `${n}%` },
-    { key: "booked",      label: "Booked",         fmt: n => n },
+    { key: "replyRate",   label: "Reply rate",     fmt: n => n == null ? "—" : `${n}%`, isPp: true },
     { key: "yelpSpend",   label: "Yelp $ this wk", fmt: n => `$${n.toFixed(0)}` },
     { key: "yelpCpl",     label: "Yelp CPL",       fmt: n => `$${n.toFixed(2)}` },
   ];
 
   const charts = {};
 
-  // querystring-passthrough so /?key=foo&days=30 propagates to the API
   const qs = new URLSearchParams(location.search);
   const apiKey = qs.get("key") || "";
   let currentDays = parseInt(qs.get("days") || "7", 10) || 7;
-  // ?api=https://lppressurewash.com lets the preview hit a deployed backend
-  // (defaults to same-origin once deployed to Vercel)
   const apiBase = (qs.get("api") || "").replace(/\/$/, "");
 
   function setActiveRange(d) {
@@ -178,26 +214,23 @@
     load();
   });
 
-  function renderKPIs(kpis) {
-    const grid = document.getElementById("kpi-grid");
+  function renderKPISet(elId, defs, kpis) {
+    const grid = document.getElementById(elId);
     grid.innerHTML = "";
-    for (const def of KPI_DEFS) {
+    for (const def of defs) {
       const k = kpis[def.key] || { value: 0, change: null };
       const v = k.value == null ? "—" : def.fmt(k.value);
       let changeHtml = "";
-      if (k.change != null && def.key !== "replyRate") {
+      if (k.change != null) {
         const cls = k.change > 0 ? "up" : k.change < 0 ? "down" : "";
         const arrow = k.change > 0 ? "▲" : k.change < 0 ? "▼" : "·";
-        changeHtml = `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change)}% vs prior</div>`;
-      } else if (def.key === "replyRate" && k.change != null) {
-        const cls = k.change > 0 ? "up" : k.change < 0 ? "down" : "";
-        const arrow = k.change > 0 ? "▲" : k.change < 0 ? "▼" : "·";
-        changeHtml = `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change)}pp vs prior</div>`;
+        const unit = def.isPp ? "pp" : "%";
+        changeHtml = `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change)}${unit} vs prior</div>`;
       } else {
         changeHtml = `<div class="kpi-change">no prior data</div>`;
       }
       grid.insertAdjacentHTML("beforeend", `
-        <div class="kpi">
+        <div class="kpi ${def.primary ? "primary" : ""}">
           <div class="kpi-label">${def.label}</div>
           <div class="kpi-value">${v}</div>
           ${changeHtml}
@@ -216,29 +249,26 @@
     }
   }
 
-  const CHART_DEFAULTS = {
-    color: "#c9d1d9",
-    grid: "#21262d",
-    tickColor: "#8b949e",
+  const CHART_DEFAULTS = { color: "#c9d1d9", grid: "#21262d", tickColor: "#8b949e" };
+  const SOURCE_COLORS = ["#79c0ff", "#3fb950", "#f0883e", "#a371f7", "#f85149", "#d2a8ff", "#56d364", "#ff7b72"];
+  const CHANNEL_COLORS = {
+    "Website chatbot": "#79c0ff",
+    "Phone call":      "#f0883e",
+    "Email":           "#a371f7",
+    "Text":            "#7ee787",
+    "In person":       "#56d364",
+    "Repeat":          "#3fb950",
   };
 
   function renderFunnel(funnel) {
-    const labels = funnel.map(f => f.stage);
-    const data = funnel.map(f => f.count);
     makeOrUpdateChart("chart-funnel", {
       type: "bar",
       data: {
-        labels,
-        datasets: [{
-          label: "Count",
-          data,
-          backgroundColor: "#2f81f7",
-          borderRadius: 4,
-        }],
+        labels: funnel.map(f => f.stage),
+        datasets: [{ label: "Count", data: funnel.map(f => f.count), backgroundColor: "#2f81f7", borderRadius: 4 }],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { color: CHART_DEFAULTS.tickColor, maxRotation: 60, minRotation: 30 }, grid: { color: CHART_DEFAULTS.grid } },
@@ -248,8 +278,6 @@
     });
   }
 
-  const SOURCE_COLORS = ["#79c0ff", "#3fb950", "#f0883e", "#a371f7", "#f85149", "#d2a8ff", "#56d364", "#ff7b72"];
-
   function renderSource(leadsBySource) {
     const { weeks, series } = leadsBySource;
     const datasets = Object.entries(series).map(([name, data], i) => ({
@@ -257,15 +285,13 @@
       data,
       borderColor: SOURCE_COLORS[i % SOURCE_COLORS.length],
       backgroundColor: SOURCE_COLORS[i % SOURCE_COLORS.length] + "33",
-      tension: 0.3,
-      borderWidth: 2,
+      tension: 0.3, borderWidth: 2,
     }));
     makeOrUpdateChart("chart-source", {
       type: "line",
       data: { labels: weeks, datasets },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: { legend: { labels: { color: CHART_DEFAULTS.color, font: { size: 11 } } } },
         scales: {
           x: { ticks: { color: CHART_DEFAULTS.tickColor }, grid: { color: CHART_DEFAULTS.grid } },
@@ -276,19 +302,17 @@
   }
 
   function renderYelp(trend) {
-    const labels = trend.map(t => t.weekEnding);
     makeOrUpdateChart("chart-yelp", {
       type: "line",
       data: {
-        labels,
+        labels: trend.map(t => t.weekEnding),
         datasets: [
-          { label: "Leads",     data: trend.map(t => t.leads),   borderColor: "#3fb950", backgroundColor: "#3fb95033", tension: 0.3, yAxisID: "y", borderWidth: 2 },
-          { label: "Ad spend",  data: trend.map(t => t.adSpend), borderColor: "#f0883e", backgroundColor: "#f0883e33", tension: 0.3, yAxisID: "y1", borderWidth: 2 },
+          { label: "Leads",    data: trend.map(t => t.leads),   borderColor: "#3fb950", backgroundColor: "#3fb95033", tension: 0.3, yAxisID: "y",  borderWidth: 2 },
+          { label: "Ad spend", data: trend.map(t => t.adSpend), borderColor: "#f0883e", backgroundColor: "#f0883e33", tension: 0.3, yAxisID: "y1", borderWidth: 2 },
         ],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: { legend: { labels: { color: CHART_DEFAULTS.color, font: { size: 11 } } } },
         scales: {
           x:  { ticks: { color: CHART_DEFAULTS.tickColor }, grid: { color: CHART_DEFAULTS.grid } },
@@ -299,10 +323,59 @@
     });
   }
 
+  function renderChannelMix(mix) {
+    if (!mix.length) {
+      const el = document.getElementById("chart-mix").parentElement;
+      el.innerHTML = `<h2>Bookings by channel</h2><div class="empty">No bookings in this window yet.</div>`;
+      return;
+    }
+    const colors = mix.map(m => CHANNEL_COLORS[m.channel] || "#8b949e");
+    makeOrUpdateChart("chart-mix", {
+      type: "doughnut",
+      data: { labels: mix.map(m => m.channel), datasets: [{ data: mix.map(m => m.count), backgroundColor: colors, borderColor: "#0e1117", borderWidth: 2 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "right", labels: { color: CHART_DEFAULTS.color, font: { size: 11 }, boxWidth: 12 } } },
+        cutout: "60%",
+      },
+    });
+  }
+
+  function renderChannelTable(rows) {
+    const el = document.getElementById("channel-table");
+    if (!rows.length) { el.innerHTML = `<div class="empty">No quoted or booked jobs in this window yet.</div>`; return; }
+    el.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Channel</th>
+          <th class="num">Quoted</th>
+          <th class="num">Booked</th>
+          <th class="num">Conv%</th>
+          <th class="num">$ Booked</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td><span class="pill ${r.group}">${escapeHtml(r.channel)}</span></td>
+              <td class="num">${r.quoted}</td>
+              <td class="num">${r.booked}</td>
+              <td class="num">${r.convPct == null ? "—" : r.convPct + "%"}</td>
+              <td class="num">$${r.dollars.toLocaleString()}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
   function fmtDate(iso) {
     if (!iso) return "—";
     const d = new Date(iso);
     return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+  function fmtDateOnly(iso) {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
   function daysSince(iso) {
     if (!iso) return null;
@@ -310,6 +383,19 @@
   }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function renderRepeat(rows) {
+    const el = document.getElementById("repeat-activity");
+    if (!rows.length) { el.innerHTML = `<div class="empty">No past customers came back in this window.</div>`; return; }
+    el.innerHTML = rows.map(r => `
+      <div class="list-item">
+        <div>
+          <div><strong>${escapeHtml(r.clientName)}</strong> · ${escapeHtml(r.service || "")} ${r.dollars ? `· $${r.dollars}` : ""}</div>
+          <div class="meta">via ${escapeHtml(r.channel || "—")} · booked ${fmtDateOnly(r.bookingDate)} · ${r.priorCount} prior booking${r.priorCount === 1 ? "" : "s"}${r.daysSincePrior != null ? ` · ${r.daysSincePrior}d since first` : ""}</div>
+        </div>
+      </div>
+    `).join("");
   }
 
   function renderCold(leads) {
@@ -358,10 +444,14 @@
         throw new Error(body.error || `HTTP ${r.status}`);
       }
       const data = await r.json();
-      renderKPIs(data.kpis);
-      renderFunnel(data.funnel);
+      renderKPISet("kpi-business",  BUSINESS_KPIS,  data.kpis);
+      renderKPISet("kpi-secondary", SECONDARY_KPIS, data.kpis);
+      renderChannelMix(data.channelMix);
+      renderChannelTable(data.channelBreakdown);
+      renderFunnel(data.webFunnel);
       renderSource(data.leadsBySource);
       renderYelp(data.yelpTrend);
+      renderRepeat(data.repeatActivity);
       renderCold(data.coldLeads);
       renderRecent(data.recentActivity);
       document.getElementById("last-updated").textContent = `updated ${fmtDate(data.generatedAt)}`;
