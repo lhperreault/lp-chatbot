@@ -22,7 +22,7 @@ const AT_CLIENTS = "Clients";
 // Old ambiguous values (Phone call / Text / Email) are kept here so the
 // dashboard still buckets legacy records sensibly while you reclassify.
 const CHANNEL_GROUPS = {
-  marketing: ["Website", "Meta ads", "Yelp", "Google", "Website chatbot"],
+  marketing: ["Website", "Meta ads", "Yelp", "Google", "Angi", "Website chatbot"],
   organic:   ["Referral", "Repeat", "Yard sign / truck", "Door Knocking", "In person"],
 };
 
