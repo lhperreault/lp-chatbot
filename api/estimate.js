@@ -15,10 +15,9 @@ const AT_JOBS          = "Jobs";
 const AT_CONVERSATIONS = "Conversations";
 const AT_FUNNEL        = "Funnel events";
 // Match chat.js so Airtable single-select options don't reject writes.
-// If you later add a new option like "Website estimate form" to your
-// Source / Channel / Source channel fields, you can split these out.
 const SOURCE_CLIENTS   = "Website";          // Clients.Source
-const SOURCE_CHANNEL   = "Website chatbot";  // Jobs."Source channel" AND Conversations.Channel
+const LEAD_ORIGIN      = "Website";          // Jobs."Lead origin" — where the lead came from
+const CONVO_CHANNEL    = "Website chatbot";  // Conversations.Channel — medium of communication
 
 function airtableUrl(table) {
   return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
@@ -139,7 +138,7 @@ async function createJob(clientId, args, conversationLog, customerName, opts = {
       "Quote":             args.quote            || "",
       "Quote date":        new Date().toISOString().split("T")[0],
       "Pipeline stage":    stage,
-      "Source channel":    SOURCE_CHANNEL,
+      "Lead origin":       LEAD_ORIGIN,
     };
     if (leadStatus) fields["Lead status"] = leadStatus;
     if (typeof args.quoteAmount === "number") fields["Quote amount"]     = args.quoteAmount;
@@ -197,7 +196,7 @@ async function logConversation({ clientId, jobId, direction, author, message, in
   try {
     if (!clientId) return;
     const fields = {
-      "Client": [clientId], "Channel": SOURCE_CHANNEL, "Direction": direction,
+      "Client": [clientId], "Channel": CONVO_CHANNEL, "Direction": direction,
       "Author": author, "Message": message || "", "Timestamp": new Date().toISOString(),
     };
     if (jobId)  fields["Job"]    = [jobId];
@@ -685,7 +684,7 @@ Never fabricate a number just to have something to say. "I don't have a rule for
   • Sensitive light fixtures: we can tape them off or avoid spraying them directly.
   • Security/exterior cameras: no history of issues, but we can tape them if the customer wants.
   • Exterior outlets: we tape them if they don't already have a weather guard.
-  • Plants right next to the house: we tarp them or avoid spraying soap toward them. Our soaps are plant-safe regardless.
+  • Plants right next to the house: we can tarp them or avoid spraying soap toward them. Our soaps are plant-safe regardless.
 - Year: 2026.
 ${OFFER_PROMPT_BLOCK}
 QUICK REPLY BUTTONS (CRITICAL — affects every reply):

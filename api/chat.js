@@ -12,7 +12,8 @@ function setCors(res) {
 const AT_CLIENTS       = "Clients";
 const AT_JOBS          = "Jobs";
 const AT_CONVERSATIONS = "Conversations";
-const SOURCE_CHANNEL   = "Website chatbot";
+const LEAD_ORIGIN      = "Website";          // Jobs."Lead origin" — origin attribution
+const CONVO_CHANNEL    = "Website chatbot";  // Conversations.Channel — medium
 
 // ─── Full LP Pressure Washing System Prompt ─────────────────────────────────
 const SYSTEM_PROMPT = `Hey there! Welcome to LP Pressure Washing!
@@ -519,7 +520,7 @@ async function createJob(clientId, args, conversationLog) {
       "Quote":            args.quote || "",
       "Quote date":       new Date().toISOString().split("T")[0],
       "Lead status":      "Quoted",
-      "Source channel":   SOURCE_CHANNEL,
+      "Lead origin":      LEAD_ORIGIN,
     };
     if (typeof args.quoteAmount === "number") fields["Quote amount"] = args.quoteAmount;
     if (args.reasoning) fields["Reasoning"] = args.reasoning;

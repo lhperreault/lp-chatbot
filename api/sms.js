@@ -17,7 +17,8 @@ const AT_CLIENTS      = "Clients";
 const AT_JOBS         = "Jobs";
 const AT_CONVERSATIONS = "Conversations";
 const SOURCE_CLIENTS  = "Website";          // Clients.Source — matches existing single-select option
-const SOURCE_CHANNEL  = "Website chatbot";  // Jobs.Source channel AND Conversations.Channel
+const LEAD_ORIGIN     = "Website";          // Jobs."Lead origin"
+const CONVO_CHANNEL   = "Website chatbot";  // Conversations.Channel — medium
 const MODEL           = "claude-haiku-4-5";
 
 function atUrl(table)      { return `https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(table)}`; }
@@ -138,7 +139,7 @@ async function createJob(clientId, args, conversationLog) {
       "Quote":             args.quote            || "",
       "Quote date":        new Date().toISOString().split("T")[0],
       "Lead status":       "Quoted",
-      "Source channel":    SOURCE_CHANNEL,
+      "Lead origin":       LEAD_ORIGIN,
     };
     if (typeof args.quoteAmount === "number") fields["Quote amount"] = args.quoteAmount;
     if (args.reasoning)  fields["Reasoning"]       = args.reasoning;
@@ -502,7 +503,7 @@ export default async function handler(req, res) {
     if (client) {
       await createConversationRow({
         "Client":     [client.id],
-        "Channel":    SOURCE_CHANNEL,
+        "Channel":    CONVO_CHANNEL,
         "Direction":  "Inbound",
         "Author":     "Customer",
         "Message":    text,
@@ -530,7 +531,7 @@ export default async function handler(req, res) {
     // 5. Create pending_approval Conversation row for the draft
     const convoRow = client ? await createConversationRow({
       "Client":         [client.id],
-      "Channel":        SOURCE_CHANNEL,
+      "Channel":        CONVO_CHANNEL,
       "Direction":      "Outbound",
       "Author":         "AI bot",
       "Message":        draft,

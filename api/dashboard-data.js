@@ -19,9 +19,11 @@ const AT_CLIENTS = "Clients";
 
 // Edit these to reclassify a channel without touching anything else.
 // Anything not listed falls into "other".
+// Old ambiguous values (Phone call / Text / Email) are kept here so the
+// dashboard still buckets legacy records sensibly while you reclassify.
 const CHANNEL_GROUPS = {
-  marketing: ["Website chatbot", "Phone call", "Email"],
-  organic:   ["Text", "In person", "Repeat"],
+  marketing: ["Website", "Meta ads", "Yelp", "Google", "Website chatbot"],
+  organic:   ["Referral", "Repeat", "Yard sign / truck", "Door Knocking", "In person"],
 };
 
 // Funnel chart — web-inbound only, ends at Quote sent. Post-quote stages
@@ -136,7 +138,7 @@ export default async function handler(req, res) {
       // pulling the full table once per request is fine.
       fetchAll(AT_JOBS, {
         "fields[]": [
-          "Job ID", "Client", "Service type", "Source channel",
+          "Job ID", "Client", "Service type", "Lead origin",
           "Quote amount", "Quote date", "Booking date", "Completion date",
           "Pipeline stage", "Lead status", "Last touch", "Outreach attempts",
           "Customer responded", "Notes from Luke",
@@ -192,7 +194,7 @@ export default async function handler(req, res) {
     const groupPrevCount  = { marketing: 0, organic: 0, other: 0 };
     const channelStats = {}; // { [channel]: { quoted, booked, dollars } }
     for (const j of jobsCurrBooked) {
-      const ch = j.fields["Source channel"] || "(unset)";
+      const ch = j.fields["Lead origin"] || "(unset)";
       const grp = channelGroup(ch);
       groupCurrCount[grp] += 1;
       channelStats[ch] ||= { quoted: 0, booked: 0, dollars: 0 };
@@ -200,11 +202,11 @@ export default async function handler(req, res) {
       channelStats[ch].dollars += Number(j.fields["Quote amount"] || 0);
     }
     for (const j of jobsPrevBooked) {
-      const grp = channelGroup(j.fields["Source channel"] || "(unset)");
+      const grp = channelGroup(j.fields["Lead origin"] || "(unset)");
       groupPrevCount[grp] += 1;
     }
     for (const j of jobsCurrQuoted) {
-      const ch = j.fields["Source channel"] || "(unset)";
+      const ch = j.fields["Lead origin"] || "(unset)";
       channelStats[ch] ||= { quoted: 0, booked: 0, dollars: 0 };
       channelStats[ch].quoted += 1;
     }
@@ -366,7 +368,7 @@ export default async function handler(req, res) {
         return {
           clientName: cid ? (clientNames[cid] || "(unknown)") : "(no client)",
           service:    j.fields["Service type"]   || "",
-          channel:    j.fields["Source channel"] || "",
+          channel:    j.fields["Lead origin"] || "",
           dollars:    Math.round(Number(j.fields["Quote amount"] || 0)),
           priorCount,
           daysSincePrior,
