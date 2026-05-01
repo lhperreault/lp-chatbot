@@ -66,7 +66,7 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
           if (!ef["Referrer"]     && attribution.referrer)     fields["Referrer"]     = attribution.referrer;
         }
       } catch {}
-      await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
+      await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
       return { clientId: existingId, isNew: false };
     }
 
@@ -77,7 +77,7 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
       if (attribution.utm_campaign) fields["UTM campaign"] = attribution.utm_campaign;
       if (attribution.referrer)     fields["Referrer"]     = attribution.referrer;
     }
-    const res  = await fetch(airtableUrl(AT_CLIENTS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
+    const res  = await fetch(airtableUrl(AT_CLIENTS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
     const data = await res.json();
     if (data.error) return { error: data.error.message };
     return { clientId: data.id, isNew: true };
@@ -145,9 +145,12 @@ async function createJob(clientId, args, conversationLog, customerName, opts = {
     if (args.reasoning)   fields["Reasoning"]        = args.reasoning;
     if (args.concerns)    fields["Concerns"]          = args.concerns;
     if (conversationLog)  fields["Conversation log"]  = conversationLog;
-    const res  = await fetch(airtableUrl(AT_JOBS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
+    const res  = await fetch(airtableUrl(AT_JOBS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
     const data = await res.json();
-    if (data.error) return { error: data.error.message };
+    if (data.error) {
+      console.error("[estimate.createJob] Airtable error:", data.error, "fields:", fields);
+      return { error: data.error.message };
+    }
     return { jobId: data.id };
   } catch (err) { return { error: err.message }; }
 }
@@ -155,7 +158,7 @@ async function createJob(clientId, args, conversationLog, customerName, opts = {
 async function updateJob(jobId, fields) {
   try {
     if (!jobId) return { error: "jobId required" };
-    const res  = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
+    const res  = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
     const data = await res.json();
     if (data.error) return { error: data.error.message };
     return { jobId: data.id };
@@ -186,7 +189,7 @@ async function logFunnelEvent({ eventType, attribution, sessionId, clientId, job
     if (clientId)  fields["Client"]    = [clientId];
     if (jobId)     fields["Job"]       = [jobId];
     if (notes)     fields["Notes"]     = String(notes).slice(0, 1000);
-    await fetch(airtableUrl(AT_FUNNEL), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
+    await fetch(airtableUrl(AT_FUNNEL), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
   } catch (err) {
     console.error("[logFunnelEvent] error:", err);
   }
@@ -201,7 +204,7 @@ async function logConversation({ clientId, jobId, direction, author, message, in
     };
     if (jobId)  fields["Job"]    = [jobId];
     if (intent) fields["Intent"] = intent;
-    await fetch(airtableUrl(AT_CONVERSATIONS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields }) });
+    await fetch(airtableUrl(AT_CONVERSATIONS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
   } catch (err) { console.error("logConversation error:", err); }
 }
 

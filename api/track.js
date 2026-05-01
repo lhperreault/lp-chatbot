@@ -79,7 +79,7 @@ export default async function handler(req, res) {
     const r = await fetch(airtableUrl(AT_FUNNEL), {
       method: "POST",
       headers: airtableHeaders(),
-      body: JSON.stringify({ fields }),
+      body: JSON.stringify({ fields, typecast: true }),
     });
     const data = await r.json();
     if (data.error) {

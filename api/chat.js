@@ -478,7 +478,7 @@ async function upsertClient(args, knownClientId = null) {
       const res = await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, {
         method:  "PATCH",
         headers: airtableHeaders(),
-        body:    JSON.stringify({ fields }),
+        body:    JSON.stringify({ fields, typecast: true }),
       });
       const data = await res.json();
       if (data.error) {
@@ -493,7 +493,7 @@ async function upsertClient(args, knownClientId = null) {
       const res = await fetch(airtableUrl(AT_CLIENTS), {
         method:  "POST",
         headers: airtableHeaders(),
-        body:    JSON.stringify({ fields }),
+        body:    JSON.stringify({ fields, typecast: true }),
       });
       const data = await res.json();
       if (data.error) {
@@ -530,11 +530,11 @@ async function createJob(clientId, args, conversationLog) {
     const res = await fetch(airtableUrl(AT_JOBS), {
       method:  "POST",
       headers: airtableHeaders(),
-      body:    JSON.stringify({ fields }),
+      body:    JSON.stringify({ fields, typecast: true }),
     });
     const data = await res.json();
     if (data.error) {
-      console.error("Airtable job POST error:", data.error);
+      console.error("Airtable job POST error:", data.error, "fields:", fields);
       return { error: data.error.message || "POST failed" };
     }
     return { jobId: data.id };
@@ -551,7 +551,7 @@ async function updateJob(jobId, fields) {
     const res = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, {
       method:  "PATCH",
       headers: airtableHeaders(),
-      body:    JSON.stringify({ fields }),
+      body:    JSON.stringify({ fields, typecast: true }),
     });
     const data = await res.json();
     if (data.error) {
@@ -583,7 +583,7 @@ async function logConversation({ clientId, jobId, direction, author, message, in
     const res = await fetch(airtableUrl(AT_CONVERSATIONS), {
       method:  "POST",
       headers: airtableHeaders(),
-      body:    JSON.stringify({ fields }),
+      body:    JSON.stringify({ fields, typecast: true }),
     });
     const data = await res.json();
     if (data.error) {
