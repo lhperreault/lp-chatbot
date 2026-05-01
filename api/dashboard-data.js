@@ -48,7 +48,11 @@ async function fetchAll(table, params = {}) {
   const records = [];
   let offset = null;
   do {
-    const qs = new URLSearchParams(params);
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (Array.isArray(v)) v.forEach(item => qs.append(k, item));
+      else qs.append(k, v);
+    }
     if (offset) qs.set("offset", offset);
     const r = await fetch(`${airtableUrl(table)}?${qs.toString()}`, { headers: airtableHeaders() });
     const data = await r.json();
