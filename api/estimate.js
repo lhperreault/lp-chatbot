@@ -64,6 +64,11 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
           if (!ef["UTM source"]   && attribution.utm_source)   fields["UTM source"]   = attribution.utm_source;
           if (!ef["UTM campaign"] && attribution.utm_campaign) fields["UTM campaign"] = attribution.utm_campaign;
           if (!ef["Referrer"]     && attribution.referrer)     fields["Referrer"]     = attribution.referrer;
+          // Meta CAPI identifiers — needed later by api/booked-webhook to
+          // fire the Purchase event back to Meta with the original ad click.
+          if (!ef["Meta fbclid"]        && attribution.fbclid)      fields["Meta fbclid"]        = attribution.fbclid;
+          if (!ef["Meta fbp"]           && attribution.fbp)         fields["Meta fbp"]           = attribution.fbp;
+          if (!ef["Meta first seen at"] && attribution.firstSeenAt) fields["Meta first seen at"] = attribution.firstSeenAt;
         }
       } catch {}
       await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
@@ -76,6 +81,12 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
       if (attribution.utm_source)   fields["UTM source"]   = attribution.utm_source;
       if (attribution.utm_campaign) fields["UTM campaign"] = attribution.utm_campaign;
       if (attribution.referrer)     fields["Referrer"]     = attribution.referrer;
+      // Meta CAPI identifiers — captured at first touch and never overwritten
+      // (see UPDATE branch above), so we always have the original ad click
+      // when a booking later fires api/booked-webhook.
+      if (attribution.fbclid)       fields["Meta fbclid"]        = attribution.fbclid;
+      if (attribution.fbp)          fields["Meta fbp"]           = attribution.fbp;
+      if (attribution.firstSeenAt)  fields["Meta first seen at"] = attribution.firstSeenAt;
     }
     const res  = await fetch(airtableUrl(AT_CLIENTS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
     const data = await res.json();
