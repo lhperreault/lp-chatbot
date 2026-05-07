@@ -55,7 +55,9 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
     fields["Source"] = SOURCE_CLIENTS;
 
     if (existingId) {
-      // Check existing record to avoid clobbering first-touch attribution.
+      // Check existing record to avoid clobbering first-touch attribution
+      // or any property details Luke may have manually corrected. We never
+      // overwrite a field that already has a value on the record.
       try {
         const existingRes = await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { headers: airtableHeaders() });
         const existing    = await existingRes.json();
@@ -70,12 +72,18 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
           if (!ef["Meta fbp"]           && attribution.fbp)         fields["Meta fbp"]           = attribution.fbp;
           if (!ef["Meta first seen at"] && attribution.firstSeenAt) fields["Meta first seen at"] = attribution.firstSeenAt;
         }
+        // Property details — set only if currently empty on the record so
+        // a repeat customer's previously stored values survive a fresh
+        // RentCast lookup that may return wrong/different data.
+        if (args.stories  && !ef["Stories"])  fields["Stories"]  = String(args.stories);
+        if (args.sqft     && !ef["Sqft"])     fields["Sqft"]     = Number(args.sqft);
+        if (args.material && !ef["Material"]) fields["Material"] = args.material;
       } catch {}
       await fetch(`${airtableUrl(AT_CLIENTS)}/${existingId}`, { method: "PATCH", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
       return { clientId: existingId, isNew: false };
     }
 
-    // New client — stamp attribution from scratch.
+    // New client — stamp attribution + any property details we have.
     fields["First contacted"] = new Date().toISOString().split("T")[0];
     if (attribution) {
       if (attribution.utm_source)   fields["UTM source"]   = attribution.utm_source;
@@ -88,6 +96,9 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
       if (attribution.fbp)          fields["Meta fbp"]           = attribution.fbp;
       if (attribution.firstSeenAt)  fields["Meta first seen at"] = attribution.firstSeenAt;
     }
+    if (args.stories)  fields["Stories"]  = String(args.stories);
+    if (args.sqft)     fields["Sqft"]     = Number(args.sqft);
+    if (args.material) fields["Material"] = args.material;
     const res  = await fetch(airtableUrl(AT_CLIENTS), { method: "POST", headers: airtableHeaders(), body: JSON.stringify({ fields, typecast: true }) });
     const data = await res.json();
     if (data.error) return { error: data.error.message };
@@ -663,7 +674,7 @@ CORE RULES:
 - Quote range: always add $50 to calculated price (e.g. $310 calculated = "$310–$360"). Never explain the math. EXCEPTION: Gutters use a $100 range — see the GUTTERS pricing section for details.
 - MINIMUM FEE: If calculated price < $120, say "We have a $120 minimum visit fee — would you like to add another service?" Never show sub-$120 quote.
 - Phone is already captured in CUSTOMER CONTEXT (appears below this prompt). Do NOT ask for it again. You may confirm if helpful.
-- AIRTABLE: The customer's name/phone/address have already been saved to Airtable server-side — do NOT call upsert_client unless you learn additional info (email, full name, etc.). Call save_quote_job immediately when you reveal a price. Call confirm_booking when customer locks in a date.
+- AIRTABLE: The customer's name/phone/address have already been saved to Airtable server-side — do NOT call upsert_client unless you learn additional info: email, full name, or property details (stories, sqft, siding material). Persisting property details to the Client means repeat customers won't be asked the same questions again next visit. Call save_quote_job immediately when you reveal a price; include stories/sqft/material on that call too if you have them. Call confirm_booking when customer locks in a date.
 - NEVER narrate your own tool calls to the customer. Do not say things like "let me try that again", "retrying with the job ID", "calling save_quote_job now", or any other out-loud description of what you're doing behind the scenes. Tools are silent infrastructure. If a tool fails, retry silently; if it fails twice, just continue the conversation naturally without mentioning it.
 
 UNKNOWN SITUATIONS / EDGE CASES (CRITICAL):
@@ -958,8 +969,8 @@ ${firstMessageRule}`;
 
 // ─── Tools (Anthropic format: name/description/input_schema at top level) ────
 const tools = [
-  { name: "upsert_client", description: "Find or create client. Call on first turn and whenever new info is learned.", input_schema: { type: "object", properties: { firstName: { type: "string" }, fullName: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, address: { type: "string" } }, required: ["firstName"] } },
-  { name: "save_quote_job", description: "Save quote to Airtable immediately when price is revealed. upsert_client must run first.", input_schema: { type: "object", properties: { serviceType: { type: "string" }, propertySnapshot: { type: "string" }, quote: { type: "string" }, quoteAmount: { type: "number" }, reasoning: { type: "string" }, concerns: { type: "string" } }, required: ["serviceType", "quote", "quoteAmount"] } },
+  { name: "upsert_client", description: "Find or create client. Call on first turn and whenever new info is learned — including property details (stories, sqft, siding material) so repeat customers aren't re-asked.", input_schema: { type: "object", properties: { firstName: { type: "string" }, fullName: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, address: { type: "string" }, stories: { type: "string", description: "Number of stories: '1', '2', or '3'" }, sqft: { type: "number", description: "Approximate square footage of the home" }, material: { type: "string", description: "Primary siding material: Vinyl, Brick, Wood, Stucco, etc." } }, required: ["firstName"] } },
+  { name: "save_quote_job", description: "Save quote to Airtable immediately when price is revealed. upsert_client must run first. Include stories/sqft/material if known — they get persisted to the Client record for repeat-customer recall.", input_schema: { type: "object", properties: { serviceType: { type: "string" }, propertySnapshot: { type: "string" }, quote: { type: "string" }, quoteAmount: { type: "number" }, reasoning: { type: "string" }, concerns: { type: "string" }, stories: { type: "string" }, sqft: { type: "number" }, material: { type: "string" } }, required: ["serviceType", "quote", "quoteAmount"] } },
   { name: "confirm_booking", description: "Mark job as Booked with agreed date.", input_schema: { type: "object", properties: { bookingDate: { type: "string" }, customerConfirmText: { type: "string" } }, required: ["bookingDate"] } },
   { name: "check_calendar_availability", description: "Check open dates. Only call when customer explicitly asks to book.", input_schema: { type: "object", properties: { weeksAhead: { type: "number" } } } },
   { name: "lookup_property", description: "Look up property from address for house wash quoting.", input_schema: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } },
@@ -1011,12 +1022,34 @@ async function runTool(name, args, state, formData, originalMessages) {
         // Fire-and-forget Telegram notification so the AI isn't blocked.
         notifyQuote(state, formData, originalMessages).catch(err => console.error("[notifyQuote] fire-and-forget error:", err));
         logFunnelEvent({ eventType: "Quote sent", attribution: state.attribution, sessionId: state.sessionId, clientId: state.clientId, jobId: state.jobId, notes: args.serviceType }).catch(() => {});
+        // Persist any property details the bot learned during this quote
+        // back to the Client record. upsertClient is conservative: it
+        // won't overwrite existing values. Fire-and-forget so a failure
+        // here can never block the chat.
+        if (state.clientId && (args.stories || args.sqft || args.material)) {
+          upsertClient({
+            stories:  args.stories,
+            sqft:     args.sqft,
+            material: args.material,
+          }, state.clientId).catch(err => console.error("[upsertClient property persist on quote] error:", err));
+        }
       }
       return r;
     }
     return { error: "No clientId available" };
   }
-  if (name === "lookup_property")              return await lookupProperty(args.address);
+  if (name === "lookup_property") {
+    const result = await lookupProperty(args.address);
+    // Persist what RentCast found to the Client. No-op if RentCast errored
+    // or returned nothing. Fire-and-forget — never breaks the chat.
+    if (state.clientId && result && !result.error) {
+      upsertClient({
+        sqft:    result.squareFootage,
+        stories: result.stories,
+      }, state.clientId).catch(err => console.error("[upsertClient lookup persist] error:", err));
+    }
+    return result;
+  }
   if (name === "check_calendar_availability")  return await checkCalendarAvailability(args.weeksAhead);
   if (name === "book_appointment")             return await bookAppointment(args);
   if (name === "confirm_booking") {
@@ -1138,6 +1171,16 @@ export default async function handler(req, res) {
     if (leadRes?.error)    console.log("[estimate] upsertClient error:", leadRes.error);
     propertyData = propRes;
     console.log("[estimate] property lookup result:", propRes);
+
+    // Persist RentCast property details to the Client so repeat customers
+    // don't get asked sqft/stories again. No-op if RentCast errored,
+    // returned nothing, or we don't have a clientId yet. Fire-and-forget.
+    if (state.clientId && propertyData && !propertyData.error) {
+      upsertClient({
+        sqft:    propertyData.squareFootage,
+        stories: propertyData.stories,
+      }, state.clientId).catch(err => console.error("[upsertClient property persist from RentCast] error:", err));
+    }
 
     // Ping Telegram the moment someone completes the form. Fires on every
     // first-turn submission (not gated on isNew) so that a partial capture
