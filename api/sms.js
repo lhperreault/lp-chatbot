@@ -138,6 +138,8 @@ async function createJob(clientId, args, conversationLog) {
       "Property snapshot": args.propertySnapshot || "",
       "Quote":             args.quote            || "",
       "Quote date":        new Date().toISOString().split("T")[0],
+      "Create date":       new Date().toISOString().split("T")[0],
+      "Pipeline stage":    "💬 Quoted",
       "Lead status":       "Quoted",
       "Lead origin":       LEAD_ORIGIN,
     };
@@ -277,7 +279,7 @@ async function runTool(name, args, state) {
   }
   if (name === "confirm_booking") {
     if (!state.jobId) return { error: "No jobId — save_quote_job must run first" };
-    const r = await updateJob(state.jobId, { "Booking date": args.bookingDate, "Lead status": "Booked" });
+    const r = await updateJob(state.jobId, { "Booking date": args.bookingDate, "Lead status": "Booked", "Pipeline stage": "📅 Booked" });
     if (!r.error) state.toolsUsed.push(`confirm_booking: ${args.bookingDate}`);
     return r;
   }

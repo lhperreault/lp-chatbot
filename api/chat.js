@@ -519,6 +519,8 @@ async function createJob(clientId, args, conversationLog) {
       "Property snapshot":args.propertySnapshot || "",
       "Quote":            args.quote || "",
       "Quote date":       new Date().toISOString().split("T")[0],
+      "Create date":      new Date().toISOString().split("T")[0],
+      "Pipeline stage":   "💬 Quoted",
       "Lead status":      "Quoted",
       "Lead origin":      LEAD_ORIGIN,
     };
@@ -854,8 +856,9 @@ export default async function handler(req, res) {
         } else if (toolCall.function.name === "confirm_booking") {
           if (jobId) {
             result = await updateJob(jobId, {
-              "Booking date": args.bookingDate,
-              "Lead status":  "Booked",
+              "Booking date":  args.bookingDate,
+              "Lead status":   "Booked",
+              "Pipeline stage":"📅 Booked",
             });
             // Also log the customer's confirmation message with intent
             if (clientId && args.customerConfirmText) {

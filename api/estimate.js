@@ -148,6 +148,7 @@ async function createJob(clientId, args, conversationLog, customerName, opts = {
       "Property snapshot": args.propertySnapshot || "",
       "Quote":             args.quote            || "",
       "Quote date":        new Date().toISOString().split("T")[0],
+      "Create date":       new Date().toISOString().split("T")[0],
       "Pipeline stage":    stage,
       "Lead origin":       LEAD_ORIGIN,
     };
