@@ -326,6 +326,200 @@
     background: var(--bg);
   }
   .ptr.show { height: 28px; }
+
+  /* ── Chat dock (collapsed) ──────────────────────────────────────────── */
+  .chat-dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: saturate(180%) blur(8px);
+    -webkit-backdrop-filter: saturate(180%) blur(8px);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -1px 4px rgba(15, 15, 15, 0.04);
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+  }
+  .chat-dock .icon {
+    width: 30px; height: 30px;
+    background: var(--accent-soft); color: var(--accent-text);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .chat-dock .placeholder {
+    flex: 1;
+    color: var(--text-3); font-size: 13px;
+  }
+  .chat-dock .ctx-pill {
+    background: var(--bg-soft); color: var(--text-2);
+    font-size: 10px; padding: 2px 7px; border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  /* ── Chat sheet (expanded) ──────────────────────────────────────────── */
+  .chat-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 102;
+    height: 80vh;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-modal);
+    transform: translateY(100%);
+    transition: transform 220ms cubic-bezier(.2,.8,.2,1);
+    display: flex; flex-direction: column;
+  }
+  .chat-sheet.open { transform: translateY(0); }
+  .chat-header {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .chat-header .title {
+    font-size: 15px; font-weight: 600; color: var(--text);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chat-header .actions { display: flex; gap: 4px; }
+  .chat-header button {
+    background: transparent; border: 0;
+    color: var(--text-2); font-size: 12px;
+    padding: 6px 10px; border-radius: 6px; cursor: pointer;
+  }
+  .chat-header button:hover { background: var(--bg-soft); color: var(--text); }
+
+  .chat-context-strip {
+    padding: 8px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-soft);
+    font-size: 11px; color: var(--text-2);
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  }
+  .chat-context-strip .ctx-tag {
+    background: #fff; border: 1px solid var(--border);
+    padding: 3px 8px; border-radius: 10px;
+    font-weight: 500; color: var(--text);
+  }
+
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .chat-empty {
+    text-align: center; color: var(--text-3);
+    font-size: 13px; padding: 24px 12px;
+    line-height: 1.6;
+  }
+  .chat-empty .examples {
+    margin-top: 16px;
+    display: flex; flex-direction: column; gap: 6px;
+    text-align: left;
+  }
+  .chat-empty .examples button {
+    background: var(--bg-soft); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px;
+    padding: 9px 12px; border-radius: 8px; cursor: pointer;
+    text-align: left;
+  }
+  .chat-empty .examples button:hover { background: var(--bg-hover); }
+
+  .msg {
+    max-width: 88%; padding: 10px 13px;
+    border-radius: 14px; font-size: 14px;
+    line-height: 1.45; word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--accent); color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: var(--bg-soft); color: var(--text);
+    border-bottom-left-radius: 4px;
+  }
+  .msg.system {
+    align-self: center; max-width: 95%;
+    background: rgba(217,153,12,0.10); color: #876012;
+    border: 1px solid rgba(217,153,12,0.25);
+    font-size: 12px; padding: 8px 12px;
+    border-radius: 8px;
+  }
+  .tool-trace {
+    align-self: flex-start; max-width: 88%;
+    font-size: 11px; color: var(--text-2);
+    background: transparent;
+    padding: 2px 4px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .tool-trace .tool-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tool-trace .tool-name {
+    font-weight: 500; color: var(--text);
+    background: var(--bg-soft); padding: 1px 6px;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px;
+  }
+  .tool-trace .tool-name.error { background: rgba(212,76,71,0.10); color: #a82a25; }
+
+  .typing {
+    align-self: flex-start;
+    color: var(--text-3); font-size: 13px;
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .typing .dot {
+    width: 6px; height: 6px;
+    background: var(--text-3); border-radius: 50%;
+    animation: pulse 1.2s infinite ease-in-out;
+  }
+  .typing .dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing .dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pulse {
+    0%, 60%, 100% { opacity: 0.3; }
+    30% { opacity: 1; }
+  }
+
+  .chat-input-row {
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    display: flex; gap: 8px;
+    align-items: flex-end;
+  }
+  .chat-input-row textarea {
+    flex: 1;
+    background: var(--bg-soft);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.4;
+    resize: none;
+    min-height: 38px;
+    max-height: 120px;
+    -webkit-appearance: none;
+  }
+  .chat-input-row textarea:focus {
+    outline: 0; border-color: var(--accent);
+    background: #fff;
+  }
+  .chat-input-row .send {
+    background: var(--accent); color: #fff;
+    border: 0; border-radius: 50%;
+    width: 38px; height: 38px;
+    font-size: 16px; cursor: pointer;
+    flex-shrink: 0;
+  }
+  .chat-input-row .send:hover { background: #1a64b8; }
+  .chat-input-row .send:disabled { background: var(--text-3); cursor: not-allowed; }
+
+  /* Account for the chat dock when it's collapsed — content needs bottom padding */
+  body { padding-bottom: 56px; }
 </style>
 </head>
 <body>
@@ -336,7 +530,7 @@
     <div class="tabs" id="top-tabs">
       <a href="dashboard.html" id="tab-dashboard">Dashboard</a>
       <a href="ops.html" class="active">Kanban</a>
-      <a href="#" class="disabled" title="Phase 2">Chat</a>
+      <a href="#" id="open-chat-btn">Chat</a>
     </div>
   </div>
   <div class="view-picker" id="view-picker">
@@ -373,6 +567,35 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Chat dock (collapsed bar at bottom) -->
+<div class="chat-dock" id="chat-dock">
+  <div class="icon">💬</div>
+  <div class="placeholder" id="chat-dock-placeholder">Ask anything…</div>
+  <div class="ctx-pill" id="chat-ctx-pill" style="display:none"></div>
+</div>
+
+<!-- Chat sheet (expanded full-screen) -->
+<div class="chat-sheet" id="chat-sheet">
+  <div class="chat-header">
+    <div class="title">💬 LP Ops Chat</div>
+    <div class="actions">
+      <button id="chat-clear" title="Clear conversation">Clear</button>
+      <button id="chat-close" title="Close">Close</button>
+    </div>
+  </div>
+  <div class="chat-context-strip" id="chat-ctx-strip">
+    <span>Context:</span>
+    <span class="ctx-tag" id="ctx-view">view</span>
+    <span class="ctx-tag" id="ctx-job" style="display:none">job</span>
+    <span class="ctx-tag" id="ctx-client" style="display:none">client</span>
+  </div>
+  <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-input-row">
+    <textarea id="chat-input" placeholder="Ask the AI… (e.g. 'texted Sarah, no answer' or 'book Mike for May 22')" rows="1"></textarea>
+    <button class="send" id="chat-send">↑</button>
+  </div>
+</div>
 
 <script>
   // ── State ────────────────────────────────────────────────────────────
@@ -859,6 +1082,233 @@
     el.classList.add("show");
     setTimeout(() => el.classList.remove("show"), 2200);
   }
+
+  // ───────────────────────────────────────────────────────────────────
+  // ─── Chat dock ──────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────
+
+  const CHAT_KEY = "lp_ops_chat_v1";
+  const dock = document.getElementById("chat-dock");
+  const sheet = document.getElementById("chat-sheet");
+  const messagesEl = document.getElementById("chat-messages");
+  const inputEl = document.getElementById("chat-input");
+  const sendBtn = document.getElementById("chat-send");
+  const clearBtn = document.getElementById("chat-clear");
+  const closeBtn = document.getElementById("chat-close");
+  const openChatTab = document.getElementById("open-chat-btn");
+  const ctxView = document.getElementById("ctx-view");
+  const ctxJob = document.getElementById("ctx-job");
+  const ctxClient = document.getElementById("ctx-client");
+  const ctxPillCollapsed = document.getElementById("chat-ctx-pill");
+
+  let chatHistory = loadChatHistory();
+  let isStreaming = false;
+  let selectedJobId = null;     // tap a card → set this for next chat turn
+  let selectedClientId = null;  // future: client toggle
+
+  function loadChatHistory() {
+    try {
+      const raw = localStorage.getItem(CHAT_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }
+  function saveChatHistory() {
+    // Trim to last 30 turns to keep storage + tokens sane
+    const trimmed = chatHistory.slice(-30);
+    try { localStorage.setItem(CHAT_KEY, JSON.stringify(trimmed)); } catch {}
+  }
+
+  function viewLabel(v) {
+    return ({
+      "2026":      "2026 Jobs",
+      "all":       "All Jobs",
+      "booked":    "Booked Calendar",
+      "contacted": "Waiting for Client",
+    })[v] || v;
+  }
+
+  function renderChat() {
+    if (!chatHistory.length) {
+      messagesEl.innerHTML = `
+        <div class="chat-empty">
+          <div>I'm your CRM operator. Tell me what happened on your phone and I'll keep Airtable + Calendar in sync.</div>
+          <div class="examples">
+            <button data-example="texted Sarah, no answer yet">"texted Sarah, no answer yet"</button>
+            <button data-example="quoted John for $370 house wash">"quoted John for $370 house wash"</button>
+            <button data-example="Mike booked for May 22, put it in the calendar">"Mike booked for May 22, put it in the calendar"</button>
+            <button data-example="add new lead: Rachel, 215-555-9999, Yelp, wants house + deck">"add new lead: Rachel, 215-555-9999, Yelp, wants house + deck"</button>
+            <button data-example="draft a first-quote text for John at $370 for Friday May 22">"draft a first-quote text for John at $370 for Friday May 22"</button>
+          </div>
+        </div>
+      `;
+      messagesEl.querySelectorAll("[data-example]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          inputEl.value = btn.dataset.example;
+          sendChat();
+        });
+      });
+      return;
+    }
+    messagesEl.innerHTML = "";
+    for (const turn of chatHistory) {
+      if (turn.role === "user") {
+        messagesEl.insertAdjacentHTML("beforeend", `<div class="msg user">${escapeHtml(turn.content)}</div>`);
+      } else if (turn.role === "assistant") {
+        if (turn.toolCalls?.length) messagesEl.insertAdjacentHTML("beforeend", renderToolTrace(turn.toolCalls));
+        if (turn.content) messagesEl.insertAdjacentHTML("beforeend", `<div class="msg assistant">${escapeHtml(turn.content)}</div>`);
+      } else if (turn.role === "system") {
+        messagesEl.insertAdjacentHTML("beforeend", `<div class="msg system">${escapeHtml(turn.content)}</div>`);
+      }
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function renderToolTrace(toolCalls) {
+    const rows = toolCalls.map(tc => {
+      const isError = tc.error || tc.result?.error;
+      const label = isError ? `${tc.name} · failed` : tc.name;
+      return `<div class="tool-row"><span class="tool-name${isError ? " error" : ""}">${escapeHtml(label)}</span></div>`;
+    }).join("");
+    return `<div class="tool-trace">${rows}</div>`;
+  }
+
+  function showTyping() {
+    const el = document.createElement("div");
+    el.id = "chat-typing";
+    el.className = "typing";
+    el.innerHTML = `<span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:6px;">thinking…</span>`;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  function hideTyping() {
+    const el = document.getElementById("chat-typing");
+    if (el) el.remove();
+  }
+
+  function updateContextStrip() {
+    ctxView.textContent = `view: ${viewLabel(currentView)}`;
+    if (selectedJobId) {
+      const j = findJob(selectedJobId);
+      ctxJob.textContent = `job: ${j?.jobId || j?.clientName || selectedJobId.slice(0, 10) + "…"}`;
+      ctxJob.style.display = "inline-block";
+    } else {
+      ctxJob.style.display = "none";
+    }
+    if (selectedClientId) {
+      ctxClient.textContent = `client: ${selectedClientId.slice(0, 10)}…`;
+      ctxClient.style.display = "inline-block";
+    } else {
+      ctxClient.style.display = "none";
+    }
+    // Also update the collapsed dock pill
+    if (selectedJobId || selectedClientId) {
+      const j = selectedJobId ? findJob(selectedJobId) : null;
+      ctxPillCollapsed.textContent = j?.jobId ? `→ ${j.jobId}` : (selectedClientId ? "→ client set" : "");
+      ctxPillCollapsed.style.display = ctxPillCollapsed.textContent ? "inline-block" : "none";
+    } else {
+      ctxPillCollapsed.style.display = "none";
+    }
+  }
+
+  async function sendChat() {
+    const text = inputEl.value.trim();
+    if (!text || isStreaming) return;
+    chatHistory.push({ role: "user", content: text });
+    inputEl.value = "";
+    autoSizeInput();
+    saveChatHistory();
+    renderChat();
+    showTyping();
+    isStreaming = true;
+    sendBtn.disabled = true;
+
+    try {
+      const params = new URLSearchParams();
+      if (apiKey) params.set("key", apiKey);
+      const r = await fetch(`${apiBase}/api/ops-chat?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: chatHistory.map(t => ({ role: t.role, content: t.content })).filter(t => t.role === "user" || t.role === "assistant"),
+          view: currentView,
+          selectedJobId,
+          selectedClientId,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      hideTyping();
+      if (!r.ok) {
+        chatHistory.push({ role: "system", content: `Error: ${data.error || "HTTP " + r.status}` });
+      } else {
+        chatHistory.push({
+          role: "assistant",
+          content: data.reply || "(no response)",
+          toolCalls: data.toolCalls || [],
+        });
+        // After any mutation, reload Kanban data so it reflects changes
+        const mutated = (data.toolCalls || []).some(tc => ["create_client","create_job","update_job","log_outreach","log_response","book_calendar"].includes(tc.name) && !tc.error);
+        if (mutated) load();
+      }
+      saveChatHistory();
+      renderChat();
+    } catch (err) {
+      hideTyping();
+      chatHistory.push({ role: "system", content: `Network error: ${err.message}` });
+      saveChatHistory();
+      renderChat();
+    } finally {
+      isStreaming = false;
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  function openChat() {
+    sheet.classList.add("open");
+    updateContextStrip();
+    renderChat();
+    setTimeout(() => inputEl.focus(), 200);
+  }
+  function closeChat() {
+    sheet.classList.remove("open");
+  }
+
+  dock.addEventListener("click", openChat);
+  closeBtn.addEventListener("click", closeChat);
+  openChatTab.addEventListener("click", e => { e.preventDefault(); openChat(); });
+
+  clearBtn.addEventListener("click", () => {
+    if (!confirm("Clear chat history?")) return;
+    chatHistory = [];
+    saveChatHistory();
+    renderChat();
+  });
+
+  sendBtn.addEventListener("click", sendChat);
+  inputEl.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendChat();
+    }
+  });
+
+  function autoSizeInput() {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(120, inputEl.scrollHeight) + "px";
+  }
+  inputEl.addEventListener("input", autoSizeInput);
+
+  // When user taps a card, ALSO set it as the chat's selected job (so the
+  // chat knows what they're talking about). The edit modal still opens
+  // alongside — the chat just gets context for free.
+  const _origOpenEditModal = openEditModal;
+  window.openEditModal = function (jobId) {
+    selectedJobId = jobId;
+    updateContextStrip();
+    _origOpenEditModal(jobId);
+  };
 
   // ── Boot ─────────────────────────────────────────────────────────────
   load();
