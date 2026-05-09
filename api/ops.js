@@ -1,27 +1,23 @@
-// ─── Ops UI: Chat agent endpoint ──────────────────────────────────────────
-// Anthropic Sonnet 4.5 + tool use. Lives inside Luke's mobile Ops UI.
-// Replaces the Claude.ai MCP setup — same brain, same tone, same workflows,
-// just hosted server-side so it can run alongside the Kanban.
+// ─── Ops API: single endpoint for the Ops UI ────────────────────────────
+// Consolidates what used to be three files (ops-data, ops-update, ops-chat)
+// behind one handler so we stay under Vercel's Hobby-plan 12-function cap.
+// Routes by ?action= query param:
 //
-// Confirmation discipline: the system prompt makes the bot verbosely state
-// every CRM/Calendar mutation in plain English so Luke never has to verify
-// manually. Per his explicit ask: "I'm updating Lead status to Booked,
-// Pipeline stage to 📅 Booked, Booking date to 2026-05-22, and creating
-// a Google Calendar event for Thursday May 22 at 8:30am."
+//   GET  /api/ops?action=data&view=2026|all|booked|contacted
+//        → returns Jobs grouped by view, Clients resolved
+//   POST /api/ops?action=update   { jobId, fields }
+//        → patches a Job. Whitelisted fields. Auto-stamps companions.
+//   POST /api/ops?action=chat     { messages, view, selectedJobId, selectedClientId }
+//        → Anthropic Sonnet 4.5 + tools. Returns { reply, toolCalls, usage }.
 //
-// POST body:
-//   {
-//     messages: [{ role: "user"|"assistant", content: "..." }, ...]   // full history
-//     view:     "2026" | "all" | "booked" | "contacted" | null         // user's current Kanban view
-//     selectedJobId:    "rec..." | null                                 // job they tapped (optional)
-//     selectedClientId: "rec..." | null                                 // client toggle (optional)
-//   }
-//
-// Returns:
-//   { reply: "...", toolCalls: [...], usage: { input_tokens, ... } }
+// All actions share auth (DASHBOARD_KEY) and Airtable helpers.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { google } from "googleapis";
+
+// ═══════════════════════════════════════════════════════════════════════
+// Shared: Airtable helpers + constants
+// ═══════════════════════════════════════════════════════════════════════
 
 const AT_BASE     = process.env.AIRTABLE_BASE_ID;
 const AT_KEY      = process.env.AIRTABLE_API_KEY;
@@ -74,7 +70,6 @@ async function airtablePost(table, fields) {
   return data;
 }
 
-// ─── Stage → Lead status mapping (mirrors ops-update.js) ──────────────────
 const STAGE_TO_LEAD_STATUS = {
   "🆕 New lead":  null,
   "💬 Quoted":    "Quoted",
@@ -86,12 +81,211 @@ const STAGE_TO_LEAD_STATUS = {
 
 const todayISO = () => new Date().toISOString().split("T")[0];
 
-// ─── Tool implementations ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// Action: data — Kanban / list view payload
+// ═══════════════════════════════════════════════════════════════════════
+
+const KANBAN_STAGES = [
+  "🆕 New lead",
+  "💬 Quoted",
+  "📞 Contacted",
+  "📅 Booked",
+  "✅ Job done",
+  "❌ Lost",
+];
+
+const VIEW_CONFIGS = {
+  "2026":      { layout: "kanban", label: "2026 Jobs",          filter: `IS_AFTER({Create date}, '2025-12-31')` },
+  "all":       { layout: "kanban", label: "All Jobs",           filter: null },
+  "booked":    { layout: "list",   label: "Booked Calendar",    filter: `{Pipeline stage}='📅 Booked'`,                                              sortField: "Booking date", sortDirection: "asc" },
+  "contacted": { layout: "list",   label: "Waiting for Client", filter: `AND({Pipeline stage}='📞 Contacted', {Customer responded}=BLANK())`,        sortField: "Last touch",   sortDirection: "asc" },
+};
+
+const JOB_FIELDS_FOR_VIEW = [
+  "Job ID", "Client", "Service type", "Property snapshot", "Quote",
+  "Quote amount", "Quote date", "Booking date", "Completion date",
+  "Lead status", "Concerns", "Lead origin", "Pipeline stage",
+  "Last touch", "Notes from Luke", "Outreach attempts",
+  "Customer responded", "Create date",
+];
+
+async function handleData(req, res) {
+  const viewKey = (req.query?.view || "2026").toString();
+  const view = VIEW_CONFIGS[viewKey];
+  if (!view) {
+    return res.status(400).json({ error: `unknown view '${viewKey}'. Try one of: ${Object.keys(VIEW_CONFIGS).join(", ")}` });
+  }
+
+  const params = { "fields[]": JOB_FIELDS_FOR_VIEW };
+  if (view.filter) params.filterByFormula = view.filter;
+  if (view.sortField) {
+    params["sort[0][field]"]     = view.sortField;
+    params["sort[0][direction]"] = view.sortDirection || "asc";
+  }
+  const rawJobs = await airtableGet(AT_JOBS, params);
+
+  // Resolve linked Client names + phones in one batched call
+  const clientIds = new Set();
+  for (const j of rawJobs) {
+    const linked = j.fields["Client"] || [];
+    if (linked[0]) clientIds.add(linked[0]);
+  }
+  const clientMap = {};
+  if (clientIds.size) {
+    const ids = [...clientIds];
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const formula = `OR(${chunk.map(id => `RECORD_ID()='${id}'`).join(",")})`;
+      const clients = await airtableGet(AT_CLIENTS, {
+        filterByFormula: formula,
+        "fields[]": ["Name", "Full name", "Phone", "Address"],
+      });
+      for (const c of clients) {
+        clientMap[c.id] = {
+          name:    c.fields?.["Full name"] || c.fields?.["Name"] || "(unnamed)",
+          phone:   c.fields?.["Phone"]   || "",
+          address: c.fields?.["Address"] || "",
+        };
+      }
+    }
+  }
+
+  const jobs = rawJobs.map(j => {
+    const f = j.fields;
+    const linked = f["Client"] || [];
+    const clientId = linked[0] || null;
+    const client = clientId ? clientMap[clientId] : null;
+    return {
+      id:               j.id,
+      jobId:            f["Job ID"]            || "",
+      clientId,
+      clientName:       client?.name           || "(no client)",
+      clientPhone:      client?.phone          || "",
+      clientAddress:    client?.address        || "",
+      serviceType:      f["Service type"]      || "",
+      propertySnapshot: f["Property snapshot"] || "",
+      quote:            f["Quote"]             || "",
+      quoteAmount:      f["Quote amount"]      || null,
+      quoteDate:        f["Quote date"]        || null,
+      bookingDate:      f["Booking date"]      || null,
+      completionDate:   f["Completion date"]   || null,
+      leadStatus:       f["Lead status"]       || "",
+      pipelineStage:    f["Pipeline stage"]    || "",
+      leadOrigin:       f["Lead origin"]       || "",
+      lastTouch:        f["Last touch"]        || null,
+      notesFromLuke:    f["Notes from Luke"]   || "",
+      outreachAttempts: f["Outreach attempts"] || 0,
+      customerResponded:f["Customer responded"]|| null,
+      createDate:       f["Create date"]       || null,
+      concerns:         f["Concerns"]          || "",
+    };
+  });
+
+  let payload;
+  if (view.layout === "kanban") {
+    const buckets = {};
+    for (const stage of KANBAN_STAGES) buckets[stage] = [];
+    const other = [];
+    for (const j of jobs) {
+      if (buckets[j.pipelineStage]) buckets[j.pipelineStage].push(j);
+      else other.push(j);
+    }
+    const sortBucket = arr => arr.sort((a, b) => {
+      const ax = a.createDate || a.quoteDate || "";
+      const bx = b.createDate || b.quoteDate || "";
+      return ax < bx ? 1 : ax > bx ? -1 : 0;
+    });
+    for (const stage of KANBAN_STAGES) sortBucket(buckets[stage]);
+    sortBucket(other);
+
+    const columns = KANBAN_STAGES.map(stage => ({
+      stage,
+      count: buckets[stage].length,
+      jobs:  buckets[stage],
+    }));
+    if (other.length > 0) {
+      columns.push({ stage: "(no stage)", count: other.length, jobs: other });
+    }
+    payload = { layout: "kanban", viewKey, viewLabel: view.label, columns };
+  } else {
+    payload = { layout: "list", viewKey, viewLabel: view.label, sortField: view.sortField, jobs };
+  }
+
+  return res.status(200).json({ generatedAt: new Date().toISOString(), ...payload });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Action: update — PATCH a Job from the Kanban edit modal
+// ═══════════════════════════════════════════════════════════════════════
+
+const EDITABLE_FIELDS = new Set([
+  "Pipeline stage", "Lead status", "Booking date", "Quote amount", "Quote date",
+  "Last touch", "Outreach attempts", "Notes from Luke", "Customer responded",
+  "Completion date", "Final paid", "Concerns", "Service type",
+]);
+
+async function handleUpdate(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const { jobId, fields } = req.body || {};
+  if (!jobId || !/^rec[A-Za-z0-9]{14}$/.test(jobId)) {
+    return res.status(400).json({ error: "invalid jobId" });
+  }
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+    return res.status(400).json({ error: "fields must be an object" });
+  }
+
+  const incoming = Object.keys(fields);
+  const rejected = incoming.filter(k => !EDITABLE_FIELDS.has(k));
+  if (rejected.length) {
+    return res.status(400).json({ error: `not editable from this UI: ${rejected.join(", ")}` });
+  }
+
+  const out = { ...fields };
+  if (out["Pipeline stage"] && !("Lead status" in out)) {
+    const mapped = STAGE_TO_LEAD_STATUS[out["Pipeline stage"]];
+    if (mapped !== undefined) out["Lead status"] = mapped;
+  }
+  if (out["Pipeline stage"] === "📞 Contacted" && !out["Last touch"]) {
+    out["Last touch"] = todayISO();
+  }
+  if (out["Pipeline stage"] === "✅ Job done" && !out["Completion date"]) {
+    out["Completion date"] = todayISO();
+  }
+
+  const cleaned = {};
+  for (const [k, v] of Object.entries(out)) {
+    if (v === "" || v === undefined) {
+      cleaned[k] = null;
+    } else if (k === "Quote amount" || k === "Final paid" || k === "Outreach attempts") {
+      cleaned[k] = v == null ? null : Number(v);
+    } else {
+      cleaned[k] = v;
+    }
+  }
+
+  const r = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, {
+    method: "PATCH",
+    headers: airtableHeaders(),
+    body: JSON.stringify({ fields: cleaned, typecast: true }),
+  });
+  const data = await r.json();
+  if (data.error) {
+    console.error("[ops/update] Airtable error:", data.error, "fields:", cleaned);
+    return res.status(400).json({ error: data.error.message || data.error.type, fieldsSent: cleaned });
+  }
+  return res.status(200).json({ ok: true, jobId: data.id, fields: data.fields });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Action: chat — Anthropic Sonnet 4.5 + tools
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── Tool implementations ─────────────────────────────────────────────
 
 async function searchClients({ query, limit = 10 }) {
   if (!query) return { error: "query required" };
   const safe = String(query).replace(/'/g, "\\'").trim();
-  // OR across name, full name, phone, email
   const formula = `OR(
     SEARCH(LOWER('${safe.toLowerCase()}'), LOWER({Name}&'')),
     SEARCH(LOWER('${safe.toLowerCase()}'), LOWER({Full name}&'')),
@@ -124,20 +318,12 @@ async function searchJobs({ clientName, clientId, pipelineStage, leadStatus, act
     const safe = clientName.toLowerCase().replace(/'/g, "\\'");
     clauses.push(`SEARCH(LOWER('${safe}'), LOWER({Job ID}&''))`);
   }
-  if (pipelineStage) {
-    clauses.push(`{Pipeline stage}='${pipelineStage.replace(/'/g, "\\'")}'`);
-  }
-  if (leadStatus) {
-    clauses.push(`{Lead status}='${leadStatus.replace(/'/g, "\\'")}'`);
-  }
-  if (activeOnly) {
-    clauses.push(`AND({Pipeline stage}!='✅ Job done', {Pipeline stage}!='❌ Lost')`);
-  }
+  if (pipelineStage) clauses.push(`{Pipeline stage}='${pipelineStage.replace(/'/g, "\\'")}'`);
+  if (leadStatus)    clauses.push(`{Lead status}='${leadStatus.replace(/'/g, "\\'")}'`);
+  if (activeOnly)    clauses.push(`AND({Pipeline stage}!='✅ Job done', {Pipeline stage}!='❌ Lost')`);
   if (recentDays) {
     const n = parseInt(recentDays, 10);
-    if (Number.isFinite(n) && n > 0) {
-      clauses.push(`IS_AFTER({Create date}, DATEADD(TODAY(), -${n}, 'days'))`);
-    }
+    if (Number.isFinite(n) && n > 0) clauses.push(`IS_AFTER({Create date}, DATEADD(TODAY(), -${n}, 'days'))`);
   }
   const formula = clauses.length ? `AND(${clauses.join(",")})` : null;
   const params = {
@@ -152,7 +338,6 @@ async function searchJobs({ clientName, clientId, pipelineStage, leadStatus, act
   if (formula) params.filterByFormula = formula;
   const records = await airtableGet(AT_JOBS, params);
 
-  // Resolve client names in batch
   const clientIds = new Set();
   for (const r of records) {
     const linked = r.fields["Client"] || [];
@@ -213,7 +398,6 @@ async function getJob({ jobId }) {
   const r = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { headers: airtableHeaders() });
   const data = await r.json();
   if (data.error) return { error: data.error.message };
-  // Resolve client too
   const linked = data.fields["Client"] || [];
   let clientInfo = null;
   if (linked[0]) {
@@ -235,7 +419,6 @@ async function getClient({ clientId }) {
   const r = await fetch(`${airtableUrl(AT_CLIENTS)}/${clientId}`, { headers: airtableHeaders() });
   const data = await r.json();
   if (data.error) return { error: data.error.message };
-  // Pull their linked Jobs
   const jobIds = data.fields["Jobs"] || [];
   let jobs = [];
   if (jobIds.length) {
@@ -251,7 +434,6 @@ async function getClient({ clientId }) {
 
 async function createClient({ firstName, fullName, phone, email, address, source, utmSource }) {
   if (!firstName || !phone) return { error: "firstName and phone are required" };
-  // Dedupe by phone
   const cleanPhone = phone.replace(/\D/g, "");
   const existing = await airtableGet(AT_CLIENTS, {
     filterByFormula: `SEARCH('${cleanPhone}', REGEX_REPLACE({Phone}&'', '\\\\D', ''))`,
@@ -275,7 +457,7 @@ async function createClient({ firstName, fullName, phone, email, address, source
   return { existing: false, clientId: data.id, fieldsWritten: fields };
 }
 
-async function createJob({ clientId, jobIdLabel, serviceType, pipelineStage = "🆕 New lead", quote, quoteAmount, propertySnapshot, sourceChannel = "Manual", concerns, lastTouch }) {
+async function createJobTool({ clientId, jobIdLabel, serviceType, pipelineStage = "🆕 New lead", quote, quoteAmount, propertySnapshot, sourceChannel = "Manual", concerns, lastTouch }) {
   if (!clientId) return { error: "clientId required" };
   if (!serviceType) return { error: "serviceType required" };
   const fields = {
@@ -285,13 +467,12 @@ async function createJob({ clientId, jobIdLabel, serviceType, pipelineStage = "�
     "Lead origin":    sourceChannel,
     "Create date":    todayISO(),
   };
-  if (jobIdLabel) fields["Job ID"] = jobIdLabel;
-  if (quote)              fields["Quote"]             = quote;
-  if (quoteAmount != null) fields["Quote amount"]     = Number(quoteAmount);
-  if (propertySnapshot)   fields["Property snapshot"] = propertySnapshot;
-  if (concerns)           fields["Concerns"]          = concerns;
-  if (lastTouch)          fields["Last touch"]        = lastTouch;
-  // Auto-stamp quote date if Pipeline stage is Quoted
+  if (jobIdLabel)          fields["Job ID"]            = jobIdLabel;
+  if (quote)               fields["Quote"]             = quote;
+  if (quoteAmount != null) fields["Quote amount"]      = Number(quoteAmount);
+  if (propertySnapshot)    fields["Property snapshot"] = propertySnapshot;
+  if (concerns)            fields["Concerns"]          = concerns;
+  if (lastTouch)           fields["Last touch"]        = lastTouch;
   if (pipelineStage === "💬 Quoted") {
     fields["Quote date"]  = todayISO();
     fields["Lead status"] = "Quoted";
@@ -302,28 +483,22 @@ async function createJob({ clientId, jobIdLabel, serviceType, pipelineStage = "�
   return { jobId: data.id, fieldsWritten: fields };
 }
 
-async function updateJob({ jobId, fields }) {
+async function updateJobTool({ jobId, fields }) {
   if (!jobId) return { error: "jobId required" };
   if (!fields || typeof fields !== "object") return { error: "fields object required" };
   const out = { ...fields };
-  // Auto-stamp companion fields per the CLAUDE.md transition matrix
   if (out["Pipeline stage"] && !("Lead status" in out)) {
     const mapped = STAGE_TO_LEAD_STATUS[out["Pipeline stage"]];
-    if (mapped !== undefined) out["Lead status"] = mapped; // null is allowed = clear
+    if (mapped !== undefined) out["Lead status"] = mapped;
   }
-  if (out["Pipeline stage"] === "📞 Contacted" && !out["Last touch"]) {
-    out["Last touch"] = todayISO();
-  }
-  if (out["Pipeline stage"] === "✅ Job done" && !out["Completion date"]) {
-    out["Completion date"] = todayISO();
-  }
+  if (out["Pipeline stage"] === "📞 Contacted" && !out["Last touch"]) out["Last touch"] = todayISO();
+  if (out["Pipeline stage"] === "✅ Job done" && !out["Completion date"]) out["Completion date"] = todayISO();
   const data = await airtablePatch(AT_JOBS, jobId, out);
   return { jobId: data.id, fieldsWritten: out };
 }
 
 async function logOutreach({ jobId, note }) {
   if (!jobId) return { error: "jobId required" };
-  // Read current Job to get current Outreach attempts and existing notes
   const r = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { headers: airtableHeaders() });
   const data = await r.json();
   if (data.error) return { error: data.error.message };
@@ -332,7 +507,6 @@ async function logOutreach({ jobId, note }) {
   const existingNotes = data.fields["Notes from Luke"] || "";
   const stamped = `[${todayISO()}] Outreach #${newCount}${note ? " — " + note : ""}`;
   const newNotes = existingNotes ? `${existingNotes}\n${stamped}` : stamped;
-  // Don't downgrade Pipeline stage if it's already further along
   const stage = data.fields["Pipeline stage"];
   const updateFields = {
     "Outreach attempts": newCount,
@@ -344,7 +518,6 @@ async function logOutreach({ jobId, note }) {
     updateFields["Lead status"]    = "Follow up";
   }
   await airtablePatch(AT_JOBS, jobId, updateFields);
-  // Log Funnel event
   const linked = data.fields["Client"] || [];
   await airtablePost(AT_FUNNEL, {
     "Event ID":   `${todayISO().replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6)}-or`,
@@ -363,7 +536,6 @@ async function logResponse({ jobId, note, alsoBookForDate }) {
   const data = await r.json();
   if (data.error) return { error: data.error.message };
   const updateFields = {};
-  // Only set Customer responded if currently blank (first-response date is the truth)
   if (!data.fields["Customer responded"]) updateFields["Customer responded"] = todayISO();
   if (alsoBookForDate) {
     updateFields["Booking date"]   = alsoBookForDate;
@@ -371,7 +543,6 @@ async function logResponse({ jobId, note, alsoBookForDate }) {
     updateFields["Lead status"]    = "Booked";
   }
   if (Object.keys(updateFields).length) await airtablePatch(AT_JOBS, jobId, updateFields);
-  // Funnel event
   const linked = data.fields["Client"] || [];
   await airtablePost(AT_FUNNEL, {
     "Event ID":   `${todayISO().replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6)}-cr`,
@@ -388,7 +559,6 @@ async function bookCalendar({ jobId, date, time = "08:30", durationHours = 2, no
   if (!jobId)  return { error: "jobId required" };
   if (!date)   return { error: "date required (ISO YYYY-MM-DD)" };
   if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return { error: "Google Calendar not configured" };
-  // Pull job + client for the event title and description
   const jobRes = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { headers: airtableHeaders() });
   const job = await jobRes.json();
   if (job.error) return { error: job.error.message };
@@ -399,13 +569,12 @@ async function bookCalendar({ jobId, date, time = "08:30", durationHours = 2, no
     const cd = await cr.json();
     if (!cd.error) client = cd.fields;
   }
-  // Build the Google Calendar event
   const auth = new google.auth.GoogleAuth({
     credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),
     scopes: ["https://www.googleapis.com/auth/calendar"],
   });
   const calendar = google.calendar({ version: "v3", auth });
-  const start = new Date(`${date}T${time}:00-04:00`); // Eastern offset, naive but works for season
+  const start = new Date(`${date}T${time}:00-04:00`);
   const end = new Date(start.getTime() + Number(durationHours) * 3600 * 1000);
   const customerName = client["Full name"] || client["Name"] || "Customer";
   const summary = `${job.fields["Service type"] || "Service"} — ${customerName}`;
@@ -427,14 +596,12 @@ async function bookCalendar({ jobId, date, time = "08:30", durationHours = 2, no
       end:   { dateTime: end.toISOString(),   timeZone: "America/New_York" },
     },
   });
-  // Update Job with booking metadata
   const updateFields = {
     "Booking date":   date,
     "Pipeline stage": "📅 Booked",
     "Lead status":    "Booked",
   };
   await airtablePatch(AT_JOBS, jobId, updateFields);
-  // Funnel event
   await airtablePost(AT_FUNNEL, {
     "Event ID":   `${todayISO().replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6)}-bk`,
     "Event type": "Booked",
@@ -453,73 +620,29 @@ async function bookCalendar({ jobId, date, time = "08:30", durationHours = 2, no
   };
 }
 
-// ─── Tool definitions for the model ──────────────────────────────────────
 const TOOLS = [
-  {
-    name: "search_clients",
+  { name: "search_clients",
     description: "Find Clients by name, phone, or email. Always run this BEFORE creating a new client to avoid duplicates. Returns up to 10 matches with name/phone/email/address/source.",
-    input_schema: { type: "object", properties: { query: { type: "string", description: "Name, phone digits, or email substring" }, limit: { type: "number" } }, required: ["query"] },
-  },
-  {
-    name: "search_jobs",
+    input_schema: { type: "object", properties: { query: { type: "string", description: "Name, phone digits, or email substring" }, limit: { type: "number" } }, required: ["query"] } },
+  { name: "search_jobs",
     description: "Find Jobs by client name, client ID, pipeline stage, lead status, recency, or active-only. Use this BEFORE updating a Job. If 2+ matches, ASK Luke which one before mutating anything.",
-    input_schema: { type: "object", properties: { clientName: { type: "string" }, clientId: { type: "string" }, pipelineStage: { type: "string" }, leadStatus: { type: "string" }, activeOnly: { type: "boolean", description: "Exclude ✅ Job done and ❌ Lost" }, recentDays: { type: "number" }, limit: { type: "number" } } },
-  },
-  {
-    name: "get_job",
-    description: "Fetch a single Job by ID. Returns the full record + the linked Client info. Use when you need every field on a job to draft a message or report.",
-    input_schema: { type: "object", properties: { jobId: { type: "string" } }, required: ["jobId"] },
-  },
-  {
-    name: "get_client",
-    description: "Fetch a single Client by ID with all of their linked Jobs (summary fields).",
-    input_schema: { type: "object", properties: { clientId: { type: "string" } }, required: ["clientId"] },
-  },
-  {
-    name: "create_client",
-    description: "Create a new Client. Auto-dedupes by phone — if the phone is already on file, returns { existing: true, clientId } and does NOT create a duplicate. Source examples: Yelp, Angie, Phone, Referral, Website, Online.",
-    input_schema: { type: "object", properties: { firstName: { type: "string" }, fullName: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, address: { type: "string" }, source: { type: "string" }, utmSource: { type: "string", description: "Lowercase: yelp / facebook / google / direct" } }, required: ["firstName", "phone"] },
-  },
-  {
-    name: "create_job",
-    description: "Create a new Job linked to an existing Client. Pipeline stage defaults to '🆕 New lead'. If you set Pipeline stage = '💬 Quoted', Quote date is auto-set to today. Use stages with the exact emoji prefix.",
-    input_schema: {
-      type: "object",
-      properties: {
-        clientId: { type: "string" },
-        jobIdLabel: { type: "string", description: "Primary field, e.g. 'John – House wash'" },
-        serviceType: { type: "string" },
-        pipelineStage: { type: "string", enum: ["🆕 New lead", "💬 Quoted", "📞 Contacted", "📅 Booked", "✅ Job done", "❌ Lost"] },
-        quote: { type: "string" },
-        quoteAmount: { type: "number" },
-        propertySnapshot: { type: "string" },
-        sourceChannel: { type: "string", description: "Lead origin field. Defaults to 'Manual'" },
-        concerns: { type: "string" },
-        lastTouch: { type: "string", description: "ISO date if Luke just reached out" },
-      },
-      required: ["clientId", "serviceType"],
-    },
-  },
-  {
-    name: "update_job",
-    description: "Update fields on a Job. Auto-stamps companion fields: changing Pipeline stage updates Lead status, moving to '📞 Contacted' sets Last touch, moving to '✅ Job done' sets Completion date. Use ISO date format (YYYY-MM-DD). Use exact stage values with emoji.",
-    input_schema: { type: "object", properties: { jobId: { type: "string" }, fields: { type: "object", description: "Map of field name to value (e.g. {\"Pipeline stage\": \"📅 Booked\", \"Booking date\": \"2026-05-22\"})" } }, required: ["jobId", "fields"] },
-  },
-  {
-    name: "log_outreach",
-    description: "Log a manual outreach attempt on a Job. Increments Outreach attempts, sets Last touch=today, appends '[YYYY-MM-DD] Outreach #N — note' to Notes from Luke (preserves existing notes), moves Pipeline stage → '📞 Contacted' (only if stage is empty/New lead/Quoted/Contacted — never downgrades booked or done jobs), and creates a Funnel event row.",
-    input_schema: { type: "object", properties: { jobId: { type: "string" }, note: { type: "string", description: "Brief Luke-style note: 'voicemail / texted / call no answer / etc.'" } }, required: ["jobId"] },
-  },
-  {
-    name: "log_response",
-    description: "Log that the customer replied. Sets Customer responded=today (only if blank — preserves first-response date). If the customer is locking in a date, set alsoBookForDate to flip Pipeline stage to '📅 Booked' in the same call. Logs a Funnel event.",
-    input_schema: { type: "object", properties: { jobId: { type: "string" }, note: { type: "string" }, alsoBookForDate: { type: "string", description: "ISO date if the response was 'yes, book me for this date'" } }, required: ["jobId"] },
-  },
-  {
-    name: "book_calendar",
-    description: "Create a Google Calendar event on lppressurewashing@gmail.com AND update the Job with Booking date + Pipeline stage='📅 Booked' + Lead status='Booked'. Default time 08:30 ET, default duration 2 hours. Logs a Booked funnel event.",
-    input_schema: { type: "object", properties: { jobId: { type: "string" }, date: { type: "string", description: "ISO YYYY-MM-DD" }, time: { type: "string", description: "HH:MM 24h, default 08:30" }, durationHours: { type: "number" }, notes: { type: "string" } }, required: ["jobId", "date"] },
-  },
+    input_schema: { type: "object", properties: { clientName: { type: "string" }, clientId: { type: "string" }, pipelineStage: { type: "string" }, leadStatus: { type: "string" }, activeOnly: { type: "boolean" }, recentDays: { type: "number" }, limit: { type: "number" } } } },
+  { name: "get_job",       description: "Fetch a single Job by ID. Returns the full record + the linked Client info.",
+    input_schema: { type: "object", properties: { jobId: { type: "string" } }, required: ["jobId"] } },
+  { name: "get_client",    description: "Fetch a single Client by ID with all of their linked Jobs.",
+    input_schema: { type: "object", properties: { clientId: { type: "string" } }, required: ["clientId"] } },
+  { name: "create_client", description: "Create a new Client. Auto-dedupes by phone — if the phone is already on file, returns { existing: true, clientId } and does NOT create a duplicate.",
+    input_schema: { type: "object", properties: { firstName: { type: "string" }, fullName: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, address: { type: "string" }, source: { type: "string" }, utmSource: { type: "string" } }, required: ["firstName", "phone"] } },
+  { name: "create_job",    description: "Create a new Job linked to an existing Client. Pipeline stage defaults to '🆕 New lead'. If you set Pipeline stage = '💬 Quoted', Quote date is auto-set to today.",
+    input_schema: { type: "object", properties: { clientId: { type: "string" }, jobIdLabel: { type: "string" }, serviceType: { type: "string" }, pipelineStage: { type: "string", enum: ["🆕 New lead", "💬 Quoted", "📞 Contacted", "📅 Booked", "✅ Job done", "❌ Lost"] }, quote: { type: "string" }, quoteAmount: { type: "number" }, propertySnapshot: { type: "string" }, sourceChannel: { type: "string" }, concerns: { type: "string" }, lastTouch: { type: "string" } }, required: ["clientId", "serviceType"] } },
+  { name: "update_job",    description: "Update fields on a Job. Auto-stamps companion fields on stage changes.",
+    input_schema: { type: "object", properties: { jobId: { type: "string" }, fields: { type: "object" } }, required: ["jobId", "fields"] } },
+  { name: "log_outreach",  description: "Log a manual outreach attempt on a Job. Increments Outreach attempts, sets Last touch=today, appends '[YYYY-MM-DD] Outreach #N — note' to Notes from Luke, moves Pipeline stage → '📞 Contacted' (only if stage is empty/New lead/Quoted/Contacted), and creates a Funnel event.",
+    input_schema: { type: "object", properties: { jobId: { type: "string" }, note: { type: "string" } }, required: ["jobId"] } },
+  { name: "log_response",  description: "Log that the customer replied. Sets Customer responded=today (only if blank). If the customer is locking in a date, set alsoBookForDate.",
+    input_schema: { type: "object", properties: { jobId: { type: "string" }, note: { type: "string" }, alsoBookForDate: { type: "string" } }, required: ["jobId"] } },
+  { name: "book_calendar", description: "Create a Google Calendar event AND update the Job with Booking date + Pipeline stage='📅 Booked' + Lead status='Booked'. Default 08:30 ET, 2-hour duration. Logs a Booked funnel event.",
+    input_schema: { type: "object", properties: { jobId: { type: "string" }, date: { type: "string" }, time: { type: "string" }, durationHours: { type: "number" }, notes: { type: "string" } }, required: ["jobId", "date"] } },
 ];
 
 const TOOL_IMPL = {
@@ -528,15 +651,12 @@ const TOOL_IMPL = {
   get_job:        getJob,
   get_client:     getClient,
   create_client:  createClient,
-  create_job:     createJob,
-  update_job:     updateJob,
+  create_job:     createJobTool,
+  update_job:     updateJobTool,
   log_outreach:   logOutreach,
   log_response:   logResponse,
   book_calendar:  bookCalendar,
 };
-
-// ─── System prompt ──────────────────────────────────────────────────────
-// Condensed from CLAUDE.md, focused on in-app chat. Cached for cost.
 
 const SYSTEM_PROMPT = `You are Luke Perreault's personal CRM operator for LP Pressure Washing (Bucks/Montgomery/Lehigh counties, PA, est. 2026). Luke is the OWNER. You are running INSIDE his Ops UI on his phone — when he tells you something happened on a phone call or text, you mirror that into Airtable + Google Calendar so his data stays accurate without him having to manually verify.
 
@@ -663,105 +783,104 @@ GUARD RAILS
 • If Luke pastes raw notes with no clear ask, summarize what you understood and ASK what to do (draft, log, both?).
 `;
 
-// ─── Main handler ───────────────────────────────────────────────────────
+async function handleChat(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "Anthropic API key not configured" });
+
+  const { messages = [], view = null, selectedJobId = null, selectedClientId = null } = req.body || {};
+  if (!Array.isArray(messages) || !messages.length) {
+    return res.status(400).json({ error: "messages array required" });
+  }
+
+  const dynamicContext = [
+    `Today's date: ${todayISO()}`,
+    view ? `Luke is currently viewing: ${view} (in his Kanban)` : null,
+    selectedJobId ? `Job currently selected: ${selectedJobId} — assume questions reference this job unless Luke names another` : null,
+    selectedClientId ? `Client currently selected: ${selectedClientId} — assume questions reference this client unless Luke names another` : null,
+  ].filter(Boolean).join("\n");
+
+  const anthropic = new Anthropic();
+  const toolCalls = [];
+  let conversation = messages.map(m => ({ role: m.role, content: m.content }));
+  let finalText = "";
+  let usage = null;
+  const MAX_TOOL_LOOPS = 8;
+
+  for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 1500,
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        { type: "text", text: dynamicContext },
+      ],
+      tools: TOOLS,
+      messages: conversation,
+    });
+    usage = response.usage;
+
+    if (response.stop_reason === "end_turn" || !response.content.some(b => b.type === "tool_use")) {
+      finalText = response.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+      break;
+    }
+
+    const toolUseBlocks = response.content.filter(b => b.type === "tool_use");
+    const toolResults = [];
+    for (const block of toolUseBlocks) {
+      const impl = TOOL_IMPL[block.name];
+      if (!impl) {
+        toolCalls.push({ name: block.name, input: block.input, error: "unknown tool" });
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: unknown tool ${block.name}`, is_error: true });
+        continue;
+      }
+      try {
+        const result = await impl(block.input || {});
+        toolCalls.push({ name: block.name, input: block.input, result });
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result) });
+      } catch (err) {
+        console.error(`[ops/chat tool ${block.name}] error:`, err);
+        toolCalls.push({ name: block.name, input: block.input, error: err.message });
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${err.message || "tool failed"}`, is_error: true });
+      }
+    }
+    conversation.push({ role: "assistant", content: response.content });
+    conversation.push({ role: "user", content: toolResults });
+  }
+
+  return res.status(200).json({ reply: finalText || "(no response)", toolCalls, usage });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Main entry: route by ?action= param
+// ═══════════════════════════════════════════════════════════════════════
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST")    return res.status(405).json({ error: "Method not allowed" });
+  res.setHeader("Cache-Control", "no-store");
 
+  // Auth
   const expectedKey = process.env.DASHBOARD_KEY;
   if (expectedKey && req.query?.key !== expectedKey) {
     return res.status(401).json({ error: "unauthorized" });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: "Anthropic API key not configured" });
-  }
   if (!AT_BASE || !AT_KEY) {
-    return res.status(500).json({ error: "Airtable not configured" });
+    return res.status(500).json({ error: "airtable not configured" });
   }
 
+  const action = (req.query?.action || "").toString();
   try {
-    const { messages = [], view = null, selectedJobId = null, selectedClientId = null } = req.body || {};
-    if (!Array.isArray(messages) || !messages.length) {
-      return res.status(400).json({ error: "messages array required" });
+    switch (action) {
+      case "data":   return await handleData(req, res);
+      case "update": return await handleUpdate(req, res);
+      case "chat":   return await handleChat(req, res);
+      default:
+        return res.status(400).json({ error: `unknown action '${action}'. Use ?action=data|update|chat` });
     }
-
-    // Dynamic context block — appended to the system prompt as a separate
-    // (uncached) block so today's date and current view stay fresh.
-    const dynamicContext = [
-      `Today's date: ${todayISO()}`,
-      view ? `Luke is currently viewing: ${view} (in his Kanban)` : null,
-      selectedJobId ? `Job currently selected: ${selectedJobId} — assume questions reference this job unless Luke names another` : null,
-      selectedClientId ? `Client currently selected: ${selectedClientId} — assume questions reference this client unless Luke names another` : null,
-    ].filter(Boolean).join("\n");
-
-    const anthropic = new Anthropic();
-    const toolCalls = [];
-    let conversation = messages.map(m => ({ role: m.role, content: m.content }));
-    let finalText = "";
-    let usage = null;
-    const MAX_TOOL_LOOPS = 8;
-
-    for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
-        max_tokens: 1500,
-        system: [
-          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-          { type: "text", text: dynamicContext },
-        ],
-        tools: TOOLS,
-        messages: conversation,
-      });
-      usage = response.usage;
-
-      if (response.stop_reason === "end_turn" || !response.content.some(b => b.type === "tool_use")) {
-        finalText = response.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
-        break;
-      }
-
-      // Tool use — run each tool in this turn, stitch results back in
-      const toolUseBlocks = response.content.filter(b => b.type === "tool_use");
-      const toolResults = [];
-      for (const block of toolUseBlocks) {
-        const impl = TOOL_IMPL[block.name];
-        if (!impl) {
-          toolCalls.push({ name: block.name, input: block.input, error: "unknown tool" });
-          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: unknown tool ${block.name}`, is_error: true });
-          continue;
-        }
-        try {
-          const result = await impl(block.input || {});
-          toolCalls.push({ name: block.name, input: block.input, result });
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: block.id,
-            content: JSON.stringify(result),
-          });
-        } catch (err) {
-          console.error(`[ops-chat tool ${block.name}] error:`, err);
-          toolCalls.push({ name: block.name, input: block.input, error: err.message });
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: block.id,
-            content: `Error: ${err.message || "tool failed"}`,
-            is_error: true,
-          });
-        }
-      }
-      conversation.push({ role: "assistant", content: response.content });
-      conversation.push({ role: "user", content: toolResults });
-    }
-
-    return res.status(200).json({
-      reply: finalText || "(no response)",
-      toolCalls,
-      usage,
-    });
   } catch (err) {
-    console.error("[ops-chat] error:", err);
-    return res.status(500).json({ error: err.message || "ops-chat failed" });
+    console.error(`[ops/${action}] error:`, err);
+    return res.status(500).json({ error: err.message || "ops handler failed" });
   }
 }

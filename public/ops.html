@@ -715,9 +715,9 @@
   // ── Data load ────────────────────────────────────────────────────────
   async function load() {
     try {
-      const params = new URLSearchParams({ view: currentView });
+      const params = new URLSearchParams({ action: "data", view: currentView });
       if (apiKey) params.set("key", apiKey);
-      const url = `${apiBase}/api/ops-data?${params.toString()}`;
+      const url = `${apiBase}/api/ops?${params.toString()}`;
       const r = await fetch(url);
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
@@ -1055,9 +1055,9 @@
         // user chose explicit value for both — let it through
       }
 
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ action: "update" });
       if (apiKey) params.set("key", apiKey);
-      const r = await fetch(`${apiBase}/api/ops-update?${params.toString()}`, {
+      const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId: currentJob.id, fields: diff }),
@@ -1225,9 +1225,9 @@
     sendBtn.disabled = true;
 
     try {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ action: "chat" });
       if (apiKey) params.set("key", apiKey);
-      const r = await fetch(`${apiBase}/api/ops-chat?${params.toString()}`, {
+      const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
