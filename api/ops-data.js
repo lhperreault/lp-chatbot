@@ -189,25 +189,31 @@ export default async function handler(req, res) {
         if (buckets[j.pipelineStage]) buckets[j.pipelineStage].push(j);
         else other.push(j);
       }
-      // Within each bucket, sort newest first by Create date (or fall back to Quote date)
-      for (const stage of KANBAN_STAGES) {
-        buckets[stage].sort((a, b) => {
-          const ax = a.createDate || a.quoteDate || "";
-          const bx = b.createDate || b.quoteDate || "";
-          return ax < bx ? 1 : ax > bx ? -1 : 0;
+      // Sort each bucket newest-first by Create date (fall back to Quote date)
+      const sortBucket = arr => arr.sort((a, b) => {
+        const ax = a.createDate || a.quoteDate || "";
+        const bx = b.createDate || b.quoteDate || "";
+        return ax < bx ? 1 : ax > bx ? -1 : 0;
+      });
+      for (const stage of KANBAN_STAGES) sortBucket(buckets[stage]);
+      sortBucket(other);
+
+      // Build columns. Append a "(no stage)" column at the end if any jobs
+      // have an empty/unmapped Pipeline stage — so every Job is visible
+      // somewhere in the Kanban, even legacy bulk-imports without a stage.
+      const columns = KANBAN_STAGES.map(stage => ({
+        stage,
+        count: buckets[stage].length,
+        jobs:  buckets[stage],
+      }));
+      if (other.length > 0) {
+        columns.push({
+          stage: "(no stage)",
+          count: other.length,
+          jobs:  other,
         });
       }
-      payload = {
-        layout: "kanban",
-        viewKey,
-        viewLabel: view.label,
-        columns: KANBAN_STAGES.map(stage => ({
-          stage,
-          count: buckets[stage].length,
-          jobs:  buckets[stage],
-        })),
-        unstaged: other,
-      };
+      payload = { layout: "kanban", viewKey, viewLabel: view.label, columns };
     } else {
       payload = {
         layout: "list",
