@@ -109,12 +109,26 @@
     <h1>LP Marketing Dashboard</h1>
     <div class="subtitle">Live from Airtable · auto-refreshes every 5 min</div>
   </div>
-  <div class="range-toggle" id="range-toggle">
-    <button data-days="7" class="active">7d</button>
-    <button data-days="30">30d</button>
-    <button data-days="90">90d</button>
+  <div style="display:flex; gap:12px; align-items:center;">
+    <a id="ops-link" href="ops.html" style="color:#79c0ff; font-size:12px; text-decoration:none; padding:6px 10px; border:1px solid #21262d; border-radius:6px;">Kanban →</a>
+    <div class="range-toggle" id="range-toggle">
+      <button data-days="7" class="active">7d</button>
+      <button data-days="30">30d</button>
+      <button data-days="90">90d</button>
+    </div>
   </div>
 </header>
+<script>
+  // Carry the auth key onto the Kanban link
+  (function () {
+    const params = new URLSearchParams(location.search);
+    const k = params.get("key");
+    if (k) {
+      const a = document.getElementById("ops-link");
+      a.href = "ops.html?key=" + encodeURIComponent(k);
+    }
+  })();
+</script>
 
 <main>
   <div id="error" style="display:none" class="error-banner"></div>

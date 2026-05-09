@@ -23,6 +23,12 @@
     },
     "api/dashboard-data.js": {
       "maxDuration": 30
+    },
+    "api/ops-data.js": {
+      "maxDuration": 30
+    },
+    "api/ops-update.js": {
+      "maxDuration": 15
     }
   },
   "crons": [
