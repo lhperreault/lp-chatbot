@@ -51,14 +51,16 @@ const VIEW_CONFIGS = {
   },
 };
 
-// Job fields we always return — all 17 useful fields; frontend picks which
+// Job fields we always return — all useful fields; frontend picks which
 // to show on cards. Read-only and editable both included.
+// Note: "Source channel" was renamed to "Lead origin" earlier — only
+// "Lead origin" exists on the schema now.
 const JOB_FIELDS = [
   "Job ID", "Client", "Service type", "Property snapshot", "Quote",
   "Quote amount", "Quote date", "Booking date", "Completion date",
   "Lead status", "Concerns", "Lead origin", "Pipeline stage",
   "Last touch", "Notes from Luke", "Outreach attempts",
-  "Customer responded", "Create date", "Source channel",
+  "Customer responded", "Create date",
 ];
 
 function airtableUrl(table) {
@@ -168,7 +170,6 @@ export default async function handler(req, res) {
         leadStatus:       f["Lead status"]       || "",
         pipelineStage:    f["Pipeline stage"]    || "",
         leadOrigin:       f["Lead origin"]       || "",
-        sourceChannel:    f["Source channel"]    || "",
         lastTouch:        f["Last touch"]        || null,
         notesFromLuke:    f["Notes from Luke"]   || "",
         outreachAttempts: f["Outreach attempts"] || 0,
