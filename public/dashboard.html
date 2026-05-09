@@ -209,7 +209,17 @@
   const charts = {};
 
   const qs = new URLSearchParams(location.search);
-  const apiKey = qs.get("key") || "";
+  // Auth key: prefer URL → sessionStorage → prompt once per session.
+  let apiKey = qs.get("key") || sessionStorage.getItem("lp_ops_key") || "";
+  if (!apiKey) {
+    apiKey = prompt("Enter access key:") || "";
+    if (!apiKey) {
+      document.getElementById("error").style.display = "block";
+      document.getElementById("error").textContent = "No access key. Reload and try again.";
+      throw new Error("No access key");
+    }
+  }
+  sessionStorage.setItem("lp_ops_key", apiKey);
   let currentDays = parseInt(qs.get("days") || "7", 10) || 7;
   const apiBase = (qs.get("api") || "").replace(/\/$/, "");
 
