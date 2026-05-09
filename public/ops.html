@@ -600,7 +600,18 @@
 <script>
   // ── State ────────────────────────────────────────────────────────────
   const qs = new URLSearchParams(location.search);
-  const apiKey = qs.get("key") || "";
+  // Auth key: prefer URL → sessionStorage → prompt once per session.
+  // Stored in session-only storage so closing the tab logs you out.
+  let apiKey = qs.get("key") || sessionStorage.getItem("lp_ops_key") || "";
+  if (!apiKey) {
+    apiKey = prompt("Enter access key:") || "";
+    if (!apiKey) {
+      document.getElementById("main").innerHTML =
+        `<div class="error-banner">No access key. Reload and try again.</div>`;
+      throw new Error("No access key");
+    }
+  }
+  sessionStorage.setItem("lp_ops_key", apiKey);
   const apiBase = (qs.get("api") || "").replace(/\/$/, "");
   let currentView = qs.get("view") || localStorage.getItem("lp_ops_view") || "2026";
   let currentData = null;

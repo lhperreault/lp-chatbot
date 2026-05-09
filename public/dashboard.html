@@ -119,10 +119,10 @@
   </div>
 </header>
 <script>
-  // Carry the auth key onto the Kanban link
+  // Carry the auth key onto the Kanban link (URL → sessionStorage)
   (function () {
     const params = new URLSearchParams(location.search);
-    const k = params.get("key");
+    const k = params.get("key") || sessionStorage.getItem("lp_ops_key");
     if (k) {
       const a = document.getElementById("ops-link");
       a.href = "ops.html?key=" + encodeURIComponent(k);
