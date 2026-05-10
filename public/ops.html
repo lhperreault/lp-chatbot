@@ -1157,7 +1157,9 @@
       messagesEl.querySelectorAll("[data-example]").forEach(btn => {
         btn.addEventListener("click", () => {
           inputEl.value = btn.dataset.example;
-          sendChat();
+          inputEl.focus();
+          // Trigger input-row height resize if you've wired one
+          inputEl.dispatchEvent(new Event("input", { bubbles: true }));
         });
       });
       return;
