@@ -1100,7 +1100,7 @@
 
   const CHAT_KEY = "lp_ops_chat_v1";
   const dock = document.getElementById("chat-dock");
-  const sheet = document.getElementById("chat-sheet");
+  const chatSheet = document.getElementById("chat-sheet");
   const messagesEl = document.getElementById("chat-messages");
   const inputEl = document.getElementById("chat-input");
   const sendBtn = document.getElementById("chat-send");
@@ -1277,13 +1277,13 @@
   }
 
   function openChat() {
-    sheet.classList.add("open");
+    chatSheet.classList.add("open");
     updateContextStrip();
     renderChat();
     setTimeout(() => inputEl.focus(), 200);
   }
   function closeChat() {
-    sheet.classList.remove("open");
+    chatSheet.classList.remove("open");
   }
 
   dock.addEventListener("click", openChat);
