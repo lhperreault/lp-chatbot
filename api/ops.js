@@ -300,6 +300,177 @@ async function handleDelete(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: ingest-lead — webhook for Angi (and other) email→CRM automations
+// ═══════════════════════════════════════════════════════════════════════
+//
+// POST body shape (one of these two):
+//   { source: "angi", raw: "<full email body>" }     ← server parses
+//   { source: "angi", parsed: { name, phone, email, address, service, comments, jobNumber } }
+//
+// Behavior:
+//   1. Dedupe Client by phone — reuse if exists, create if new (Source = "Angi")
+//   2. Create Job in 🆕 New lead with Service type, Notes from Luke, Lead origin = "Angi"
+//   3. Telegram ping to Luke (📥 New Angi lead — name / phone / address / service)
+//   4. Log Funnel event (Event type = "Form submitted", UTM source = "angi")
+//   5. Returns { ok: true, clientId, jobId, isNewClient }
+
+function parseAngiEmail(text) {
+  if (!text || typeof text !== "string") return {};
+  const lead = {};
+  const norm = text.replace(/\r\n/g, "\n").replace(/ /g, " ");
+  // Name: line right after "Customer Information"
+  const nameM = norm.match(/Customer Information\s*\n+\s*([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,3})/);
+  if (nameM) lead.name = nameM[1].trim();
+  // Phone: first 10-digit US number
+  const phoneM = norm.match(/\(?(\d{3})\)?[\s.\-]*(\d{3})[\s.\-]*(\d{4})/);
+  if (phoneM) lead.phone = `(${phoneM[1]}) ${phoneM[2]}-${phoneM[3]}`;
+  // Email: first non-Angi email address
+  const emailMatches = norm.match(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g) || [];
+  for (const e of emailMatches) {
+    if (!/angi\.com$/i.test(e) && !/lhppressurewashing/i.test(e)) {
+      lead.email = e.toLowerCase();
+      break;
+    }
+  }
+  // Address: street + city/state/zip
+  const addrM = norm.match(/(\d+\s+[A-Za-z0-9 .'\-]+(?:AVE(?:NUE)?|ST(?:REET)?|RD|ROAD|DR(?:IVE)?|LN|LANE|BLVD|CT|COURT|PL(?:ACE)?|WAY|HWY|HIGHWAY|PKWY|PARKWAY|TER(?:RACE)?|CIR(?:CLE)?|TRL|TRAIL)\.?,?\s+[A-Za-z][A-Za-z .\-]+,?\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?)/i);
+  if (addrM) lead.address = addrM[1].trim().replace(/\s+,/g, ",");
+  // Service: line right after "You have a new lead!"
+  const serviceM = norm.match(/new lead!\s*\n+\s*([^\n]+)/i);
+  if (serviceM) lead.service = serviceM[1].trim();
+  // Comments: after "Comments:"
+  const commentsM = norm.match(/Comments:\s*\n*\s*([^\n]+)/i);
+  if (commentsM) lead.comments = commentsM[1].trim();
+  // Job number — Angi uses unicode dashes
+  const jobM = norm.match(/Job\s*#:?\s*[‒–—­\-\s]*(\d+)/i);
+  if (jobM) lead.jobNumber = jobM[1];
+  return lead;
+}
+
+async function sendTelegramText(text) {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_CHAT_ID,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    });
+  } catch (err) {
+    console.error("[ops/ingest-lead] telegram error:", err);
+  }
+}
+
+async function handleIngestLead(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const { source = "angi", raw, parsed } = req.body || {};
+  let lead = parsed || {};
+  if (raw && (!parsed || Object.keys(parsed).length === 0)) {
+    lead = parseAngiEmail(raw);
+  }
+
+  // Need at least a phone OR an email — without one we can't dedupe or contact
+  if (!lead.phone && !lead.email) {
+    return res.status(400).json({
+      error: "Could not extract a phone number or email from the email body",
+      parsedFields: lead,
+    });
+  }
+  if (!lead.name) lead.name = "Angi Lead";
+
+  const phoneClean = (lead.phone || "").replace(/\D/g, "");
+  const firstName = lead.name.split(/\s+/)[0];
+  const escapedFirst = firstName.toLowerCase().replace(/'/g, "\\'");
+
+  // ── 1. Dedupe Client ──────────────────────────────────────────────────
+  let clientId = null;
+  let isNewClient = false;
+  const dedupeClauses = [];
+  if (phoneClean) dedupeClauses.push(`SEARCH('${phoneClean}', REGEX_REPLACE({Phone}&'', '\\\\D', ''))`);
+  if (lead.email) dedupeClauses.push(`LOWER({Email})=LOWER('${lead.email.replace(/'/g, "\\'")}')`);
+  if (dedupeClauses.length) {
+    const formula = dedupeClauses.length === 1 ? dedupeClauses[0] : `OR(${dedupeClauses.join(",")})`;
+    const existing = await airtableGet(AT_CLIENTS, {
+      filterByFormula: formula,
+      maxRecords: 1,
+      "fields[]": ["Name", "Phone"],
+    });
+    if (existing.length) clientId = existing[0].id;
+  }
+  if (!clientId) {
+    isNewClient = true;
+    const clientFields = {
+      "Name":            firstName,
+      "Full name":       lead.name,
+      "Phone":           lead.phone || "",
+      "Email":           lead.email || "",
+      "Address":         lead.address || "",
+      "Source":          "Angi",
+      "UTM source":      "angi",
+      "First contacted": todayISO(),
+    };
+    Object.keys(clientFields).forEach(k => clientFields[k] === "" && delete clientFields[k]);
+    const c = await airtablePost(AT_CLIENTS, clientFields);
+    clientId = c.id;
+  }
+
+  // ── 2. Create Job ─────────────────────────────────────────────────────
+  const serviceType = lead.service || "Powerwash";
+  const notes = [
+    lead.comments ? `Angi comments: ${lead.comments}` : null,
+    lead.jobNumber ? `Angi Job #${lead.jobNumber}` : null,
+  ].filter(Boolean).join("\n");
+  const jobFields = {
+    "Client":         [clientId],
+    "Job ID":         `${firstName} – ${serviceType}`,
+    "Service type":   serviceType,
+    "Pipeline stage": "🆕 New lead",
+    "Lead origin":    "Angi",
+    "Property snapshot": lead.address || "",
+    "Create date":    todayISO(),
+  };
+  if (notes) jobFields["Notes from Luke"] = notes;
+  const j = await airtablePost(AT_JOBS, jobFields);
+
+  // ── 3. Telegram ping ──────────────────────────────────────────────────
+  const tgLines = [
+    `📥 <b>New Angi lead</b>`,
+    `<b>${lead.name}</b>${isNewClient ? "" : " (existing client)"}`,
+    lead.phone ? `📞 ${lead.phone}` : null,
+    lead.email ? `✉️ ${lead.email}` : null,
+    lead.address ? `🏠 ${lead.address}` : null,
+    `🛠 ${serviceType}`,
+    lead.comments ? `\n<i>${lead.comments}</i>` : null,
+    lead.jobNumber ? `\nAngi Job #${lead.jobNumber}` : null,
+  ].filter(Boolean).join("\n");
+  await sendTelegramText(tgLines);
+
+  // ── 4. Funnel event ───────────────────────────────────────────────────
+  await airtablePost(AT_FUNNEL, {
+    "Event ID":   `${todayISO().replace(/-/g, "")}-${Math.random().toString(36).slice(2, 6)}-an`,
+    "Event type": "Form submitted",
+    "Timestamp":  new Date().toISOString(),
+    "UTM source": "angi",
+    "Notes":      `Angi lead intake${lead.jobNumber ? " — Job #" + lead.jobNumber : ""}`,
+    "Client":     [clientId],
+    "Job":        [j.id],
+  }).catch(err => console.error("[ops/ingest-lead] funnel event failed:", err));
+
+  return res.status(200).json({
+    ok: true,
+    clientId,
+    jobId: j.id,
+    isNewClient,
+    parsed: lead,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: chat — Anthropic Sonnet 4.5 + tools
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -933,9 +1104,10 @@ export default async function handler(req, res) {
   try {
     switch (action) {
       case "data":   return await handleData(req, res);
-      case "update": return await handleUpdate(req, res);
-      case "delete": return await handleDelete(req, res);
-      case "chat":   return await handleChat(req, res);
+      case "update":      return await handleUpdate(req, res);
+      case "delete":      return await handleDelete(req, res);
+      case "chat":        return await handleChat(req, res);
+      case "ingest-lead": return await handleIngestLead(req, res);
       default:
         return res.status(400).json({ error: `unknown action '${action}'. Use ?action=data|update|chat` });
     }
