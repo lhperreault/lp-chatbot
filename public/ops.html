@@ -451,18 +451,43 @@
     font-size: 13px; padding: 24px 12px;
     line-height: 1.6;
   }
-  .chat-empty .examples {
-    margin-top: 16px;
-    display: flex; flex-direction: column; gap: 6px;
-    text-align: left;
+  .chat-empty .workflow-buttons {
+    margin-top: 18px;
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center;
   }
-  .chat-empty .examples button {
-    background: var(--bg-soft); border: 1px solid var(--border);
-    color: var(--text); font-size: 13px;
-    padding: 9px 12px; border-radius: 8px; cursor: pointer;
-    text-align: left;
+  .chat-empty .workflow-buttons button {
+    background: #fff; border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; font-weight: 500;
+    padding: 8px 14px; border-radius: 18px; cursor: pointer;
+    transition: all 100ms;
   }
-  .chat-empty .examples button:hover { background: var(--bg-hover); }
+  .chat-empty .workflow-buttons button:hover {
+    background: rgba(35, 131, 226, 0.06);
+    border-color: rgba(35, 131, 226, 0.4);
+    color: #2383e2;
+  }
+
+  /* Persistent quick-action strip above the input */
+  .chat-quick-actions {
+    display: flex; gap: 6px; overflow-x: auto;
+    padding: 8px 12px 0;
+    scrollbar-width: none;
+  }
+  .chat-quick-actions::-webkit-scrollbar { display: none; }
+  .chat-quick-actions button {
+    flex-shrink: 0;
+    background: #fff; border: 1px solid var(--border);
+    color: var(--text-2); font-size: 11px; font-weight: 500;
+    padding: 5px 11px; border-radius: 14px; cursor: pointer;
+    white-space: nowrap;
+    transition: all 100ms;
+  }
+  .chat-quick-actions button:hover {
+    background: rgba(35, 131, 226, 0.06);
+    border-color: rgba(35, 131, 226, 0.4);
+    color: #2383e2;
+  }
 
   .msg {
     max-width: 88%; padding: 10px 13px;
@@ -634,8 +659,15 @@
     <span class="ctx-tag clearable" id="ctx-client" style="display:none" title="Tap to clear">client</span>
   </div>
   <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-quick-actions" id="chat-quick-actions">
+    <button data-workflow="NEW CLIENT">+ New client</button>
+    <button data-workflow="OUTREACH">Outreach</button>
+    <button data-workflow="QUOTED">Quoted</button>
+    <button data-workflow="BOOKED">Booked</button>
+    <button data-workflow="DRAFT MESSAGE">Draft message</button>
+  </div>
   <div class="chat-input-row">
-    <textarea id="chat-input" placeholder="Ask the AI… (e.g. 'texted Sarah, no answer' or 'book Mike for May 22')" rows="1"></textarea>
+    <textarea id="chat-input" placeholder="Tap a workflow above, or type what happened…" rows="1"></textarea>
     <button class="send" id="chat-send">↑</button>
   </div>
 </div>
@@ -1206,6 +1238,14 @@
   const sendBtn = document.getElementById("chat-send");
   const clearBtn = document.getElementById("chat-clear");
   const closeBtn = document.getElementById("chat-close");
+
+  // Wire up the persistent quick-action buttons above the input
+  document.querySelectorAll("#chat-quick-actions [data-workflow]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      inputEl.value = `[${btn.dataset.workflow}]`;
+      sendChat();
+    });
+  });
   const openChatTab = document.getElementById("open-chat-btn");
   const ctxView = document.getElementById("ctx-view-select");
   const ctxJob = document.getElementById("ctx-job");
@@ -1272,9 +1312,25 @@
     if (!chatHistory.length) {
       messagesEl.innerHTML = `
         <div class="chat-empty">
-          <div>I'm your CRM operator. Tell me what happened on your phone — log an outreach, send a quote, book a date, create a new lead — and I'll keep Airtable + Calendar in sync.</div>
+          <div>Tap a workflow to get started, or just type what happened on your phone.</div>
+          <div class="workflow-buttons">
+            <button data-workflow="NEW CLIENT">+ New client</button>
+            <button data-workflow="OUTREACH">Outreach</button>
+            <button data-workflow="QUOTED">Quoted</button>
+            <button data-workflow="BOOKED">Booked</button>
+            <button data-workflow="DRAFT MESSAGE">Draft message</button>
+          </div>
         </div>
       `;
+      messagesEl.querySelectorAll("[data-workflow]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          // Workflow buttons auto-send the trigger — the AI doesn't act
+          // until it has the info, so this is safe (no Airtable/Calendar
+          // writes happen on the trigger turn alone)
+          inputEl.value = `[${btn.dataset.workflow}]`;
+          sendChat();
+        });
+      });
       return;
     }
     messagesEl.innerHTML = "";
