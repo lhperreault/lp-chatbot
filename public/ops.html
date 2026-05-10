@@ -295,6 +295,32 @@
   .sheet-actions .primary:hover { background: #1a64b8; }
   .sheet-actions .primary:disabled { background: var(--text-3); cursor: not-allowed; }
 
+  /* ── Delete zone (two-step) ─────────────────────────────────────────── */
+  .delete-zone {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .delete-btn {
+    width: 100%;
+    background: transparent; color: #b54300;
+    border: 1px solid rgba(245, 93, 0, 0.25);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+    transition: all 120ms;
+  }
+  .delete-btn:hover {
+    background: rgba(245, 93, 0, 0.06);
+    border-color: rgba(245, 93, 0, 0.4);
+  }
+  .delete-btn.armed {
+    background: #d72d2d; color: #fff;
+    border-color: #d72d2d;
+    font-weight: 600;
+  }
+  .delete-btn.armed:hover { background: #b51f1f; border-color: #b51f1f; }
+
   /* ── Toast for save feedback ────────────────────────────────────────── */
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -912,6 +938,51 @@
       });
     }
 
+    // Wire up the two-step delete button
+    const deleteBtn = sheetBody.querySelector("#job-delete-btn");
+    if (deleteBtn) {
+      let armed = false;
+      let armTimer = null;
+      const disarm = () => {
+        armed = false;
+        deleteBtn.classList.remove("armed");
+        deleteBtn.textContent = "Delete this job";
+      };
+      deleteBtn.addEventListener("click", async () => {
+        if (!armed) {
+          armed = true;
+          deleteBtn.classList.add("armed");
+          deleteBtn.textContent = "Tap again within 4s to confirm delete";
+          if (armTimer) clearTimeout(armTimer);
+          armTimer = setTimeout(disarm, 4000);
+          return;
+        }
+        // Second tap → actually delete
+        if (armTimer) clearTimeout(armTimer);
+        if (!currentJob) return;
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = "Deleting…";
+        try {
+          const params = new URLSearchParams({ action: "delete" });
+          if (apiKey) params.set("key", apiKey);
+          const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jobId: currentJob.id }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+          toast("Deleted");
+          closeModal();
+          load();
+        } catch (err) {
+          toast("Delete failed: " + err.message, true);
+          deleteBtn.disabled = false;
+          disarm();
+        }
+      });
+    }
+
     backdrop.classList.add("open");
     sheet.classList.add("open");
     saveBtn.disabled = false;
@@ -1013,6 +1084,10 @@
           ${j.leadOrigin ? `<div><strong>Lead origin:</strong> ${escapeHtml(j.leadOrigin)}</div>` : ""}
           ${j.createDate ? `<div><strong>Created:</strong> ${escapeHtml(fmtDate(j.createDate))}</div>` : ""}
         </div>
+      </div>
+
+      <div class="delete-zone">
+        <button type="button" class="delete-btn" id="job-delete-btn">Delete this job</button>
       </div>
     `;
   }

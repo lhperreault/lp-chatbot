@@ -278,6 +278,28 @@ async function handleUpdate(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleDelete(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const { jobId } = req.body || {};
+  if (!jobId || !/^rec[A-Za-z0-9]{14}$/.test(jobId)) {
+    return res.status(400).json({ error: "invalid jobId" });
+  }
+  const r = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, {
+    method:  "DELETE",
+    headers: airtableHeaders(),
+  });
+  const data = await r.json();
+  if (data.error) {
+    console.error("[ops/delete] Airtable error:", data.error);
+    return res.status(400).json({ error: data.error.message || data.error.type });
+  }
+  return res.status(200).json({ ok: true, jobId, deleted: data.deleted });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: chat — Anthropic Sonnet 4.5 + tools
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -875,6 +897,7 @@ export default async function handler(req, res) {
     switch (action) {
       case "data":   return await handleData(req, res);
       case "update": return await handleUpdate(req, res);
+      case "delete": return await handleDelete(req, res);
       case "chat":   return await handleChat(req, res);
       default:
         return res.status(400).json({ error: `unknown action '${action}'. Use ?action=data|update|chat` });
