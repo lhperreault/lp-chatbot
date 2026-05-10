@@ -423,6 +423,22 @@
     background: #fff; border: 1px solid var(--border);
     padding: 3px 8px; border-radius: 10px;
     font-weight: 500; color: var(--text);
+    font-size: 11px;
+  }
+  .chat-context-strip .ctx-select {
+    -webkit-appearance: none; appearance: none;
+    cursor: pointer; font-family: inherit;
+    padding-right: 22px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%23787774'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
+  }
+  .chat-context-strip .clearable {
+    cursor: pointer;
+    transition: background 100ms;
+  }
+  .chat-context-strip .clearable:hover {
+    background: var(--bg-hover);
   }
 
   .chat-messages {
@@ -587,6 +603,7 @@
   </div>
   <div class="sheet-body" id="sheet-body"></div>
   <div class="sheet-actions">
+    <button class="secondary" id="sheet-discuss" title="Open chat with this job as context">💬 Discuss</button>
     <button class="secondary" id="sheet-cancel">Cancel</button>
     <button class="primary" id="sheet-save">Save</button>
   </div>
@@ -612,9 +629,9 @@
   </div>
   <div class="chat-context-strip" id="chat-ctx-strip">
     <span>Context:</span>
-    <span class="ctx-tag" id="ctx-view">view</span>
-    <span class="ctx-tag" id="ctx-job" style="display:none">job</span>
-    <span class="ctx-tag" id="ctx-client" style="display:none">client</span>
+    <select class="ctx-tag ctx-select" id="ctx-view-select" title="Tap to change view"></select>
+    <span class="ctx-tag clearable" id="ctx-job" style="display:none" title="Tap to clear">job</span>
+    <span class="ctx-tag clearable" id="ctx-client" style="display:none" title="Tap to clear">client</span>
   </div>
   <div class="chat-messages" id="chat-messages"></div>
   <div class="chat-input-row">
@@ -995,6 +1012,14 @@
   backdrop.addEventListener("click", closeModal);
   document.getElementById("sheet-cancel").addEventListener("click", closeModal);
 
+  // "Discuss in chat" — set selectedJobId, close modal, open chat with job as context
+  document.getElementById("sheet-discuss").addEventListener("click", () => {
+    if (!currentJob) return;
+    selectedJobId = currentJob.id;
+    closeModal();
+    openChat();
+  });
+
   function findJob(jobRecId) {
     if (!currentData) return null;
     if (currentData.layout === "kanban") {
@@ -1182,9 +1207,37 @@
   const clearBtn = document.getElementById("chat-clear");
   const closeBtn = document.getElementById("chat-close");
   const openChatTab = document.getElementById("open-chat-btn");
-  const ctxView = document.getElementById("ctx-view");
+  const ctxView = document.getElementById("ctx-view-select");
   const ctxJob = document.getElementById("ctx-job");
   const ctxClient = document.getElementById("ctx-client");
+
+  // Populate the view-picker <select> in the chat context strip
+  const VIEW_OPTIONS = [
+    { value: "2026",      label: "view: 2026 Jobs" },
+    { value: "all",       label: "view: All Jobs" },
+    { value: "booked",    label: "view: Booked Calendar" },
+    { value: "contacted", label: "view: Waiting for Client" },
+  ];
+  ctxView.innerHTML = VIEW_OPTIONS.map(o =>
+    `<option value="${o.value}">${o.label}</option>`
+  ).join("");
+  ctxView.addEventListener("change", () => {
+    currentView = ctxView.value;
+    localStorage.setItem("lp_ops_view", currentView);
+    setActiveView(currentView);
+    updateContextStrip();
+    load(); // re-fetch the kanban so the user's screen also updates
+  });
+
+  // Tap on job / client tag → clear it
+  ctxJob.addEventListener("click", () => {
+    selectedJobId = null;
+    updateContextStrip();
+  });
+  ctxClient.addEventListener("click", () => {
+    selectedClientId = null;
+    updateContextStrip();
+  });
   const ctxPillCollapsed = document.getElementById("chat-ctx-pill");
 
   let chatHistory = loadChatHistory();
@@ -1219,24 +1272,9 @@
     if (!chatHistory.length) {
       messagesEl.innerHTML = `
         <div class="chat-empty">
-          <div>I'm your CRM operator. Tell me what happened on your phone and I'll keep Airtable + Calendar in sync.</div>
-          <div class="examples">
-            <button data-example="texted Sarah, no answer yet">"texted Sarah, no answer yet"</button>
-            <button data-example="quoted John for $370 house wash">"quoted John for $370 house wash"</button>
-            <button data-example="Mike booked for May 22, put it in the calendar">"Mike booked for May 22, put it in the calendar"</button>
-            <button data-example="add new lead: Rachel, 215-555-9999, Yelp, wants house + deck">"add new lead: Rachel, 215-555-9999, Yelp, wants house + deck"</button>
-            <button data-example="draft a first-quote text for John at $370 for Friday May 22">"draft a first-quote text for John at $370 for Friday May 22"</button>
-          </div>
+          <div>I'm your CRM operator. Tell me what happened on your phone — log an outreach, send a quote, book a date, create a new lead — and I'll keep Airtable + Calendar in sync.</div>
         </div>
       `;
-      messagesEl.querySelectorAll("[data-example]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          inputEl.value = btn.dataset.example;
-          inputEl.focus();
-          // Trigger input-row height resize if you've wired one
-          inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-      });
       return;
     }
     messagesEl.innerHTML = "";
@@ -1276,16 +1314,16 @@
   }
 
   function updateContextStrip() {
-    ctxView.textContent = `view: ${viewLabel(currentView)}`;
+    ctxView.value = currentView; // sync the dropdown
     if (selectedJobId) {
       const j = findJob(selectedJobId);
-      ctxJob.textContent = `job: ${j?.jobId || j?.clientName || selectedJobId.slice(0, 10) + "…"}`;
+      ctxJob.textContent = `job: ${j?.jobId || j?.clientName || selectedJobId.slice(0, 10) + "…"} ✕`;
       ctxJob.style.display = "inline-block";
     } else {
       ctxJob.style.display = "none";
     }
     if (selectedClientId) {
-      ctxClient.textContent = `client: ${selectedClientId.slice(0, 10)}…`;
+      ctxClient.textContent = `client: ${selectedClientId.slice(0, 10)}… ✕`;
       ctxClient.style.display = "inline-block";
     } else {
       ctxClient.style.display = "none";
