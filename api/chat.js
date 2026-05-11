@@ -2,8 +2,29 @@ import { google } from "googleapis";
 import OpenAI from "openai";
 
 // ─── CORS helper ────────────────────────────────────────────────────────────
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+// Echo the request's Origin when it's in our trusted list so the browser
+// accepts the response even on credentialed requests. WordPress / Elementor
+// plugins sometimes wrap fetch with `credentials: 'include'`, which makes
+// browsers reject a wildcard "*" Allow-Origin. Falling back to "*" when
+// the origin is unknown keeps the endpoint open to direct API testing.
+const ALLOWED_ORIGINS = [
+  "https://lppressurewash.com",
+  "https://www.lppressurewash.com",
+  "https://chatbot-t1bk.vercel.app",
+];
+function setCors(req, res) {
+  const origin = req.headers?.origin || "";
+  const isAllowed =
+    ALLOWED_ORIGINS.includes(origin) ||
+    /\.vercel\.app$/.test(origin) ||
+    /\.lppressurewash\.com$/.test(origin);
+  if (origin && isAllowed) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
@@ -747,7 +768,7 @@ async function checkDistance(destination) {
 
 // ─── Main Handler ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  setCors(res);
+  setCors(req, res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST")   return res.status(405).end();
 
