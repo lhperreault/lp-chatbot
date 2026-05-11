@@ -116,13 +116,16 @@
       }
     } catch (e) {}
 
-    // Fallback to fetch with keepalive
+    // Fallback to fetch with keepalive. credentials: 'omit' is the safest
+    // for cross-origin telemetry — no cookies sent, no preflight surprises.
     try {
       fetch(TRACK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    body,
         keepalive: true,
+        credentials: 'omit',
+        mode: 'cors',
       }).catch(function () {
         // Allow retry on next page navigation
         delete fired[dedupKey];
