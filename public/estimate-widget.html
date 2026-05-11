@@ -1,5 +1,9 @@
 <!-- LP Pressure Wash — Estimate Widget -->
 <!-- Paste into Elementor HTML block. Verify ESTIMATE_URL below matches your Vercel deployment. -->
+<!-- Preload the LCP image so the browser starts fetching it before CSS parses.
+     Saves 200–500ms on slow connections. -->
+<link rel="preload" as="image" href="https://chatbot-t1bk.vercel.app/images/brothers.webp" fetchpriority="high">
+<link rel="preload" as="image" href="https://chatbot-t1bk.vercel.app/images/hero.webp">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&amp;family=DM+Sans:wght@400;500&amp;display=swap" rel="stylesheet">
 
 <style>
@@ -316,7 +320,7 @@
    a real LP photo (e.g. url('https://chatbot-t1bk.vercel.app/images/hero.jpg')).
    Stays a gradient until that's done — looks clean either way. */
 #lpWrap #lpHero {
-  --lp-hero-img: url('https://chatbot-t1bk.vercel.app/images/hero.png');
+  --lp-hero-img: url('https://chatbot-t1bk.vercel.app/images/hero.webp');
   display: none;
   position: relative;
   min-height: 720px;
@@ -427,7 +431,7 @@
    --lp-hero-portrait to enable. Defaults to a translucent placeholder
    tile so the layout reads clean even before a photo is added. */
 #lpWrap .lp-hero-portrait {
-  --lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/brothers.png');
+  --lp-hero-portrait: url('https://chatbot-t1bk.vercel.app/images/brothers.webp');
   position: absolute;
   bottom: 36px;
   left: 50%;
