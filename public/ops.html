@@ -608,6 +608,100 @@
 
   /* Account for the chat dock when it's collapsed — content needs bottom padding */
   body { padding-bottom: 56px; }
+
+  /* ── Floating + button (new job for existing client) ───────────────── */
+  .fab {
+    position: fixed;
+    right: 16px;
+    bottom: 72px; /* sit above the chat dock */
+    z-index: 70;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #fff;
+    border: 0; border-radius: 24px;
+    padding: 10px 16px 10px 12px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 4px 16px rgba(15,15,15,0.15);
+    cursor: pointer; font-family: inherit;
+    letter-spacing: -0.01em;
+  }
+  .fab:hover { background: #1a64b8; }
+  .fab .plus {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(255,255,255,0.22);
+    font-size: 14px; line-height: 1;
+  }
+
+  /* ── Section header inside the edit modal ──────────────────────────── */
+  .section-header {
+    margin: 18px 0 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-2);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .section-header:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .section-header .hint {
+    font-size: 10px; font-weight: 500; color: var(--text-3);
+    text-transform: none; letter-spacing: 0;
+  }
+
+  /* ── Auto-save status indicator (in sheet-actions) ─────────────────── */
+  .save-status {
+    flex-shrink: 0;
+    font-size: 11px; color: var(--text-3);
+    align-self: center;
+    padding: 0 4px;
+    min-width: 56px;
+    text-align: center;
+    transition: color 120ms;
+  }
+  .save-status.saving { color: var(--text-2); }
+  .save-status.saved  { color: #0d6b53; }
+  .save-status.error  { color: #a82a25; }
+  .save-status.dirty  { color: #876012; }
+
+  /* ── Client search results list (in new-job modal) ─────────────────── */
+  .client-search-results {
+    max-height: 240px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: #fff;
+    margin-top: 4px;
+  }
+  .client-result {
+    padding: 10px 12px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 100ms;
+  }
+  .client-result:last-child { border-bottom: 0; }
+  .client-result:hover { background: var(--bg-soft); }
+  .client-result.selected { background: var(--accent-soft); }
+  .client-result .name { font-size: 14px; font-weight: 500; color: var(--text); }
+  .client-result .meta { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+  .client-search-empty {
+    padding: 14px 12px; text-align: center;
+    color: var(--text-3); font-size: 13px;
+  }
+  .selected-client-card {
+    background: var(--accent-soft); border: 1px solid rgba(35,131,226,0.25);
+    border-radius: 8px; padding: 10px 12px;
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  }
+  .selected-client-card .info .name {
+    font-size: 14px; font-weight: 600; color: var(--text);
+  }
+  .selected-client-card .info .meta {
+    font-size: 12px; color: var(--text-2); margin-top: 2px;
+  }
+  .selected-client-card .change-btn {
+    background: #fff; color: var(--accent-text);
+    border: 1px solid rgba(35,131,226,0.4);
+    border-radius: 6px; padding: 5px 10px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -633,7 +727,7 @@
   </div>
 </header>
 
-<div class="ptr" id="ptr">↓ pull to refresh</div>
+<div class="ptr" id="ptr" aria-hidden="true"></div>
 
 <main id="main">
   <div class="loading-banner" id="loading">Loading…</div>
@@ -650,10 +744,32 @@
   <div class="sheet-body" id="sheet-body"></div>
   <div class="sheet-actions">
     <button class="secondary" id="sheet-discuss" title="Open chat with this job as context"><img src="/logo.png" alt="" class="lp-logo-tiny" />Discuss</button>
-    <button class="secondary" id="sheet-cancel">Cancel</button>
+    <span class="save-status" id="save-status"></span>
+    <button class="secondary" id="sheet-cancel">Close</button>
     <button class="primary" id="sheet-save">Save</button>
   </div>
 </div>
+
+<!-- New-job modal (for adding a job to an existing client) -->
+<div class="modal-backdrop" id="newjob-backdrop"></div>
+<div class="modal-sheet" id="newjob-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="title">New job for existing client</div>
+    <div class="sub" id="newjob-sub">Pick a client, then fill out the job details.</div>
+  </div>
+  <div class="sheet-body" id="newjob-body"></div>
+  <div class="sheet-actions">
+    <button class="secondary" id="newjob-cancel">Cancel</button>
+    <button class="primary" id="newjob-save" disabled>Create job</button>
+  </div>
+</div>
+
+<!-- Floating "+ New job" button (existing client) -->
+<button class="fab" id="newjob-fab" title="Add a job for an existing client">
+  <span class="plus">+</span>
+  <span>New job</span>
+</button>
 
 <div class="toast" id="toast"></div>
 
@@ -682,6 +798,7 @@
   <div class="chat-messages" id="chat-messages"></div>
   <div class="chat-quick-actions" id="chat-quick-actions">
     <button data-workflow="NEW CLIENT">+ New client</button>
+    <button data-workflow="NEW JOB">+ Job (existing)</button>
     <button data-workflow="OUTREACH">Outreach</button>
     <button data-workflow="QUOTED">Quoted</button>
     <button data-workflow="BOOKED">Booked</button>
@@ -713,6 +830,7 @@
   let currentData = null;
   let currentJob = null; // job being edited
   let refreshTimer = null;
+  let currentColumnIdx = 0; // which kanban column the user is on (preserved across reloads)
 
   // Carry the auth key onto the Dashboard tab link
   const dashTab = document.getElementById("tab-dashboard");
@@ -784,7 +902,8 @@
     currentView = btn.dataset.view;
     localStorage.setItem("lp_ops_view", currentView);
     setActiveView(currentView);
-    load();
+    currentColumnIdx = 0; // user picked a new view → reset to first column
+    load({ preservePosition: false });
   });
 
   // ── Refresh ──────────────────────────────────────────────────────────
@@ -796,8 +915,9 @@
   }
 
   // ── Pull-to-refresh ──────────────────────────────────────────────────
+  // We keep the gesture but drop the visible "pull to refresh" hint — Luke
+  // didn't want the wording. The .ptr element is intentionally empty.
   let ptrStart = null, ptrPulling = false;
-  const ptrEl = document.getElementById("ptr");
   document.addEventListener("touchstart", e => {
     if (window.scrollY > 0) { ptrStart = null; return; }
     ptrStart = e.touches[0].clientY;
@@ -807,20 +927,20 @@
     const dy = e.touches[0].clientY - ptrStart;
     if (dy > 60 && !ptrPulling) {
       ptrPulling = true;
-      ptrEl.classList.add("show");
     }
   }, { passive: true });
   document.addEventListener("touchend", () => {
     if (ptrPulling) {
       ptrPulling = false;
-      ptrEl.classList.remove("show");
       load();
     }
     ptrStart = null;
   });
 
   // ── Data load ────────────────────────────────────────────────────────
-  async function load() {
+  async function load(opts = {}) {
+    const preservePosition = opts.preservePosition !== false; // default true
+    const savedScrollY = preservePosition ? window.scrollY : 0;
     try {
       const params = new URLSearchParams({ action: "data", view: currentView });
       if (apiKey) params.set("key", apiKey);
@@ -831,7 +951,11 @@
         throw new Error(body.error || `HTTP ${r.status}`);
       }
       currentData = await r.json();
-      render();
+      render({ restoreColumn: preservePosition });
+      if (preservePosition) {
+        // Restore vertical scroll after the new DOM lays out
+        requestAnimationFrame(() => window.scrollTo({ top: savedScrollY, behavior: "auto" }));
+      }
       const t = new Date(currentData.generatedAt);
       document.getElementById("updated-text").textContent =
         `Updated ${t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
@@ -842,14 +966,14 @@
   }
 
   // ── Render ───────────────────────────────────────────────────────────
-  function render() {
+  function render(opts = {}) {
     if (!currentData) return;
     const main = document.getElementById("main");
-    if (currentData.layout === "kanban") renderKanban(main, currentData);
+    if (currentData.layout === "kanban") renderKanban(main, currentData, opts.restoreColumn !== false);
     else renderList(main, currentData);
   }
 
-  function renderKanban(main, data) {
+  function renderKanban(main, data, restoreColumn = true) {
     main.innerHTML = `
       <div class="stage-tabs" id="stage-tabs"></div>
       <div class="kanban-track" id="kanban-track"></div>
@@ -857,11 +981,15 @@
     const tabsEl = document.getElementById("stage-tabs");
     const trackEl = document.getElementById("kanban-track");
 
+    const targetIdx = restoreColumn
+      ? Math.min(Math.max(0, currentColumnIdx), Math.max(0, data.columns.length - 1))
+      : 0;
+
     data.columns.forEach((col, i) => {
       const tabBtn = document.createElement("button");
       tabBtn.dataset.idx = i;
       tabBtn.innerHTML = `${escapeHtml(col.stage)} <span class="badge">${col.count}</span>`;
-      if (i === 0) tabBtn.classList.add("active");
+      if (i === targetIdx) tabBtn.classList.add("active");
       tabBtn.addEventListener("click", () => {
         trackEl.scrollTo({ left: i * trackEl.clientWidth, behavior: "smooth" });
       });
@@ -883,12 +1011,23 @@
       el.addEventListener("click", () => openEditModal(el.dataset.id));
     });
 
-    // sync stage tab on scroll
+    // Jump to the preserved column WITHOUT smooth-scroll (instant restoration)
+    if (targetIdx > 0) {
+      requestAnimationFrame(() => {
+        trackEl.scrollLeft = targetIdx * trackEl.clientWidth;
+        const activeTab = tabsEl.querySelector(`button[data-idx="${targetIdx}"]`);
+        if (activeTab) activeTab.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
+      });
+    }
+    currentColumnIdx = targetIdx;
+
+    // sync stage tab on scroll AND remember which column we're on
     let scrollTimeout;
     trackEl.addEventListener("scroll", () => {
       clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
         const idx = Math.round(trackEl.scrollLeft / trackEl.clientWidth);
+        currentColumnIdx = idx;
         tabsEl.querySelectorAll("button").forEach((b, i) => {
           b.classList.toggle("active", i === idx);
         });
@@ -991,22 +1130,35 @@
     sheetSub.textContent = subParts.join(" · ") || "—";
 
     sheetBody.innerHTML = renderEditForm(j);
+    setSaveStatus("clean");
 
     // Wire up "Today" buttons for date fields
     sheetBody.querySelectorAll("[data-today-target]").forEach(btn => {
       btn.addEventListener("click", () => {
-        const target = sheetBody.querySelector(`[name="${btn.dataset.todayTarget}"]`);
-        if (target) target.value = todayISO();
+        const target = sheetBody.querySelector(`[name="${CSS.escape(btn.dataset.todayTarget)}"]`);
+        if (target) {
+          target.value = todayISO();
+          markDirty();
+        }
       });
     });
     // Wire up "+1" outreach button
     const plus1 = sheetBody.querySelector("[data-plus-one]");
     if (plus1) {
       plus1.addEventListener("click", () => {
-        const input = sheetBody.querySelector(`[name="${plus1.dataset.plusOne}"]`);
-        if (input) input.value = String(Number(input.value || 0) + 1);
+        const input = sheetBody.querySelector(`[name="${CSS.escape(plus1.dataset.plusOne)}"]`);
+        if (input) {
+          input.value = String(Number(input.value || 0) + 1);
+          markDirty();
+        }
       });
     }
+
+    // Wire up auto-save: any change to a field triggers debounced save
+    sheetBody.querySelectorAll("[name]").forEach(el => {
+      el.addEventListener("input", markDirty);
+      el.addEventListener("change", markDirty);
+    });
 
     // Wire up the two-step delete button
     const deleteBtn = sheetBody.querySelector("#job-delete-btn");
@@ -1057,13 +1209,22 @@
     sheet.classList.add("open");
     saveBtn.disabled = false;
   }
-  function closeModal() {
+  async function closeModal() {
+    // Flush any pending auto-save so users don't lose typing on backdrop tap
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = null;
+      try { await performSave({ closeAfter: false, reloadAfter: false }); } catch {}
+    }
     backdrop.classList.remove("open");
     sheet.classList.remove("open");
     currentJob = null;
+    setSaveStatus("clean");
+    // Refresh the kanban so the card reflects whatever auto-saved while open
+    load({ preservePosition: true });
   }
-  backdrop.addEventListener("click", closeModal);
-  document.getElementById("sheet-cancel").addEventListener("click", closeModal);
+  backdrop.addEventListener("click", () => { closeModal(); });
+  document.getElementById("sheet-cancel").addEventListener("click", () => { closeModal(); });
 
   // "Discuss in chat" — set selectedJobId, close modal, open chat with job as context
   document.getElementById("sheet-discuss").addEventListener("click", () => {
@@ -1090,79 +1251,127 @@
 
   function renderEditForm(j) {
     const opts = (arr, sel) => arr.map(s => `<option value="${escapeHtml(s)}"${s === sel ? " selected" : ""}>${escapeHtml(s || "—")}</option>`).join("");
+    const dedup = arr => [...new Set(arr)];
+    const sourceOpts = dedup(["", "Yelp", "Angi", "Google", "Facebook", "Referral", "Phone", "Door-knock", "Repeat", "Other", j.clientSource || ""]);
+    const leadOriginOpts = dedup(["", "Angi", "Yelp", "Google", "Facebook", "Referral", "Phone", "Door-knock", "Repeat", "Other", j.leadOrigin || ""]);
     return `
+      <div class="section-header">Job <span class="hint">${j.createDate ? "created " + escapeHtml(fmtDate(j.createDate)) : ""}</span></div>
+
       <div class="field">
         <label>Pipeline stage</label>
-        <select name="Pipeline stage">${opts(["", ...PIPELINE_STAGES], j.pipelineStage)}</select>
+        <select name="job:Pipeline stage">${opts(["", ...PIPELINE_STAGES], j.pipelineStage)}</select>
       </div>
       <div class="field">
         <label>Lead status (auto-set if you change stage)</label>
-        <select name="Lead status">${opts(LEAD_STATUSES, j.leadStatus)}</select>
+        <select name="job:Lead status">${opts(LEAD_STATUSES, j.leadStatus)}</select>
       </div>
 
       <div class="field-row">
         <div class="field">
           <label>Quote amount</label>
-          <input name="Quote amount" type="number" inputmode="decimal" step="any" value="${j.quoteAmount ?? ""}" />
+          <input name="job:Quote amount" type="number" inputmode="decimal" step="any" value="${j.quoteAmount ?? ""}" />
         </div>
         <div class="field">
           <label>Quote date</label>
-          <input name="Quote date" type="date" value="${j.quoteDate || ""}" />
+          <input name="job:Quote date" type="date" value="${j.quoteDate || ""}" />
         </div>
+      </div>
+
+      <div class="field">
+        <label>Quote (text)</label>
+        <textarea name="job:Quote" placeholder="Full quote text (line items)">${escapeHtml(j.quote || "")}</textarea>
       </div>
 
       <div class="field">
         <label>Booking date</label>
-        <input name="Booking date" type="date" value="${j.bookingDate || ""}" />
+        <input name="job:Booking date" type="date" value="${j.bookingDate || ""}" />
       </div>
 
       <div class="field">
-        <label>Last touch <button type="button" class="quick-btn" data-today-target="Last touch" style="float:right;padding:2px 8px;font-size:11px;">today</button></label>
-        <input name="Last touch" type="date" value="${j.lastTouch || ""}" />
+        <label>Last touch <button type="button" class="quick-btn" data-today-target="job:Last touch" style="float:right;padding:2px 8px;font-size:11px;">today</button></label>
+        <input name="job:Last touch" type="date" value="${j.lastTouch || ""}" />
       </div>
 
       <div class="field-row">
         <div class="field" style="flex:2;">
-          <label>Outreach attempts <button type="button" class="quick-btn" data-plus-one="Outreach attempts" style="float:right;padding:2px 8px;font-size:11px;">+1</button></label>
-          <input name="Outreach attempts" type="number" inputmode="numeric" min="0" step="1" value="${j.outreachAttempts || 0}" />
+          <label>Outreach attempts <button type="button" class="quick-btn" data-plus-one="job:Outreach attempts" style="float:right;padding:2px 8px;font-size:11px;">+1</button></label>
+          <input name="job:Outreach attempts" type="number" inputmode="numeric" min="0" step="1" value="${j.outreachAttempts || 0}" />
         </div>
         <div class="field" style="flex:3;">
-          <label>Customer responded <button type="button" class="quick-btn" data-today-target="Customer responded" style="float:right;padding:2px 8px;font-size:11px;">today</button></label>
-          <input name="Customer responded" type="date" value="${j.customerResponded || ""}" />
+          <label>Customer responded <button type="button" class="quick-btn" data-today-target="job:Customer responded" style="float:right;padding:2px 8px;font-size:11px;">today</button></label>
+          <input name="job:Customer responded" type="date" value="${j.customerResponded || ""}" />
         </div>
       </div>
 
       <div class="field">
-        <label>Completion date <button type="button" class="quick-btn" data-today-target="Completion date" style="float:right;padding:2px 8px;font-size:11px;">today</button></label>
-        <input name="Completion date" type="date" value="${j.completionDate || ""}" />
+        <label>Completion date <button type="button" class="quick-btn" data-today-target="job:Completion date" style="float:right;padding:2px 8px;font-size:11px;">today</button></label>
+        <input name="job:Completion date" type="date" value="${j.completionDate || ""}" />
       </div>
 
       <div class="field">
         <label>Service type</label>
-        <input name="Service type" type="text" value="${escapeHtml(j.serviceType || "")}" />
+        <input name="job:Service type" type="text" value="${escapeHtml(j.serviceType || "")}" />
+      </div>
+
+      <div class="field">
+        <label>Property snapshot</label>
+        <textarea name="job:Property snapshot" placeholder="sqft, stories, material, notes about the property">${escapeHtml(j.propertySnapshot || "")}</textarea>
       </div>
 
       <div class="field">
         <label>Notes from Luke</label>
-        <textarea name="Notes from Luke" placeholder="Append your note. Existing notes are kept.">${escapeHtml(j.notesFromLuke || "")}</textarea>
+        <textarea name="job:Notes from Luke" placeholder="Append your note. Existing notes are kept.">${escapeHtml(j.notesFromLuke || "")}</textarea>
       </div>
 
       <div class="field">
         <label>Concerns</label>
-        <textarea name="Concerns">${escapeHtml(j.concerns || "")}</textarea>
+        <textarea name="job:Concerns">${escapeHtml(j.concerns || "")}</textarea>
       </div>
 
-      <div class="field">
-        <label>Read-only details</label>
-        <div class="ro">
-          <div><strong>Client:</strong> ${escapeHtml(j.clientName)} ${j.clientPhone ? "· " + escapeHtml(j.clientPhone) : ""}</div>
-          ${j.clientAddress ? `<div><strong>Address:</strong> ${escapeHtml(j.clientAddress)}</div>` : ""}
-          ${j.propertySnapshot ? `<div><strong>Property:</strong> ${escapeHtml(j.propertySnapshot)}</div>` : ""}
-          ${j.quote ? `<div><strong>Quote:</strong> ${escapeHtml(j.quote)}</div>` : ""}
-          ${j.leadOrigin ? `<div><strong>Lead origin:</strong> ${escapeHtml(j.leadOrigin)}</div>` : ""}
-          ${j.createDate ? `<div><strong>Created:</strong> ${escapeHtml(fmtDate(j.createDate))}</div>` : ""}
+      <div class="section-header">Client info <span class="hint">${j.clientId ? "" : "no client linked"}</span></div>
+
+      ${j.clientId ? `
+        <div class="field">
+          <label>Full name</label>
+          <input name="client:Full name" type="text" value="${escapeHtml(j.clientFullName || j.clientName || "")}" />
         </div>
-      </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>First name</label>
+            <input name="client:Name" type="text" value="${escapeHtml(j.clientFirstName || "")}" />
+          </div>
+          <div class="field">
+            <label>Phone</label>
+            <input name="client:Phone" type="tel" inputmode="tel" value="${escapeHtml(j.clientPhone || "")}" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Email</label>
+          <input name="client:Email" type="email" inputmode="email" value="${escapeHtml(j.clientEmail || "")}" />
+        </div>
+
+        <div class="field">
+          <label>Address</label>
+          <input name="client:Address" type="text" value="${escapeHtml(j.clientAddress || "")}" />
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>Source (Client)</label>
+            <select name="client:Source">${opts(sourceOpts, j.clientSource)}</select>
+          </div>
+          <div class="field">
+            <label>Lead origin (Job)</label>
+            <select name="job:Lead origin">${opts(leadOriginOpts, j.leadOrigin)}</select>
+          </div>
+        </div>
+      ` : `
+        <div class="field">
+          <div class="ro">No client linked to this job. Use the chat to create one.</div>
+        </div>
+      `}
 
       <div class="delete-zone">
         <button type="button" class="delete-btn" id="job-delete-btn">Delete this job</button>
@@ -1170,74 +1379,188 @@
     `;
   }
 
-  saveBtn.addEventListener("click", async () => {
+  // ── Auto-save + manual save ─────────────────────────────────────────
+  const saveStatusEl = document.getElementById("save-status");
+  let autoSaveTimer = null;
+  let saveInFlight = false;
+  let pendingAfterSave = false;
+
+  function setSaveStatus(state) {
+    saveStatusEl.classList.remove("saving", "saved", "error", "dirty");
+    if (state === "clean")      { saveStatusEl.textContent = ""; }
+    else if (state === "dirty") { saveStatusEl.textContent = "Unsaved…"; saveStatusEl.classList.add("dirty"); }
+    else if (state === "saving"){ saveStatusEl.textContent = "Saving…"; saveStatusEl.classList.add("saving"); }
+    else if (state === "saved") { saveStatusEl.textContent = "Saved ✓"; saveStatusEl.classList.add("saved"); }
+    else if (state === "error") { saveStatusEl.textContent = "Save failed"; saveStatusEl.classList.add("error"); }
+  }
+
+  function markDirty() {
     if (!currentJob) return;
+    setSaveStatus("dirty");
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => performSave({ closeAfter: false, reloadAfter: false }), 900);
+  }
+
+  function collectFieldDiffs() {
+    if (!currentJob) return { jobDiff: {}, clientDiff: {} };
+    const jobValues = {};
+    const clientValues = {};
+    sheetBody.querySelectorAll("[name]").forEach(el => {
+      const raw = el.getAttribute("name");
+      const [ns, ...rest] = raw.split(":");
+      const fieldName = rest.join(":");
+      const val = el.value === "" ? null : el.value;
+      if (ns === "job")    jobValues[fieldName] = val;
+      else if (ns === "client") clientValues[fieldName] = val;
+    });
+
+    const originalJob = {
+      "Pipeline stage":     currentJob.pipelineStage || null,
+      "Lead status":        currentJob.leadStatus    || null,
+      "Quote amount":       currentJob.quoteAmount   ?? null,
+      "Quote date":         currentJob.quoteDate     || null,
+      "Quote":              currentJob.quote         || null,
+      "Booking date":       currentJob.bookingDate   || null,
+      "Last touch":         currentJob.lastTouch     || null,
+      "Outreach attempts":  currentJob.outreachAttempts ?? null,
+      "Customer responded": currentJob.customerResponded || null,
+      "Completion date":    currentJob.completionDate || null,
+      "Service type":       currentJob.serviceType   || null,
+      "Property snapshot":  currentJob.propertySnapshot || null,
+      "Notes from Luke":    currentJob.notesFromLuke || null,
+      "Concerns":           currentJob.concerns      || null,
+      "Lead origin":        currentJob.leadOrigin    || null,
+    };
+    const originalClient = {
+      "Full name": currentJob.clientFullName || currentJob.clientName || null,
+      "Name":      currentJob.clientFirstName || null,
+      "Phone":     currentJob.clientPhone     || null,
+      "Email":     currentJob.clientEmail     || null,
+      "Address":   currentJob.clientAddress   || null,
+      "Source":    currentJob.clientSource    || null,
+    };
+
+    const diffJob = {};
+    for (const [k, v] of Object.entries(jobValues)) {
+      const before = originalJob[k];
+      const a = v == null ? null : (typeof before === "number" ? Number(v) : String(v));
+      const b = before == null ? null : (typeof before === "number" ? before : String(before));
+      if (a !== b) diffJob[k] = v;
+    }
+    const diffClient = {};
+    for (const [k, v] of Object.entries(clientValues)) {
+      const a = v == null ? null : String(v);
+      const b = originalClient[k] == null ? null : String(originalClient[k]);
+      if (a !== b) diffClient[k] = v;
+    }
+    return { jobDiff: diffJob, clientDiff: diffClient };
+  }
+
+  async function performSave({ closeAfter = false, reloadAfter = false } = {}) {
+    if (!currentJob) return;
+    if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
+    if (saveInFlight) { pendingAfterSave = true; return; }
+
+    const { jobDiff, clientDiff } = collectFieldDiffs();
+    const hasJobChanges    = Object.keys(jobDiff).length > 0;
+    const hasClientChanges = Object.keys(clientDiff).length > 0;
+
+    if (!hasJobChanges && !hasClientChanges) {
+      setSaveStatus("clean");
+      if (closeAfter) closeModal();
+      return;
+    }
+
+    saveInFlight = true;
+    setSaveStatus("saving");
     saveBtn.disabled = true;
+    const prevLabel = saveBtn.textContent;
     saveBtn.textContent = "Saving…";
+
     try {
-      const fields = {};
-      sheetBody.querySelectorAll("[name]").forEach(el => {
-        const name = el.getAttribute("name");
-        let val = el.value;
-        // Empty strings → null so Airtable clears the field
-        fields[name] = val === "" ? null : val;
-      });
-
-      // Skip fields whose values match what we already had (less noise on Airtable)
-      const original = {
-        "Pipeline stage":   currentJob.pipelineStage || null,
-        "Lead status":      currentJob.leadStatus    || null,
-        "Quote amount":     currentJob.quoteAmount   ?? null,
-        "Quote date":       currentJob.quoteDate     || null,
-        "Booking date":     currentJob.bookingDate   || null,
-        "Last touch":       currentJob.lastTouch     || null,
-        "Outreach attempts":currentJob.outreachAttempts ?? null,
-        "Customer responded":currentJob.customerResponded || null,
-        "Completion date":  currentJob.completionDate || null,
-        "Service type":     currentJob.serviceType   || null,
-        "Notes from Luke":  currentJob.notesFromLuke || null,
-        "Concerns":         currentJob.concerns      || null,
-      };
-      const diff = {};
-      for (const [k, v] of Object.entries(fields)) {
-        const before = original[k];
-        // Coerce both sides to comparable forms
-        const a = v == null ? null : (typeof before === "number" ? Number(v) : String(v));
-        const b = before == null ? null : (typeof before === "number" ? before : String(before));
-        if (a !== b) diff[k] = v;
+      if (hasJobChanges) {
+        const params = new URLSearchParams({ action: "update" });
+        if (apiKey) params.set("key", apiKey);
+        const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId: currentJob.id, fields: jobDiff }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        // Patch local state so subsequent auto-saves don't re-send the same diff
+        Object.assign(currentJob, {
+          pipelineStage:    jobDiff["Pipeline stage"]    ?? currentJob.pipelineStage,
+          leadStatus:       jobDiff["Lead status"]       ?? currentJob.leadStatus,
+          quoteAmount:      "Quote amount" in jobDiff ? (jobDiff["Quote amount"] == null ? null : Number(jobDiff["Quote amount"])) : currentJob.quoteAmount,
+          quoteDate:        "Quote date" in jobDiff    ? jobDiff["Quote date"]    : currentJob.quoteDate,
+          quote:            "Quote" in jobDiff         ? jobDiff["Quote"]         : currentJob.quote,
+          bookingDate:      "Booking date" in jobDiff  ? jobDiff["Booking date"]  : currentJob.bookingDate,
+          lastTouch:        "Last touch" in jobDiff    ? jobDiff["Last touch"]    : currentJob.lastTouch,
+          outreachAttempts: "Outreach attempts" in jobDiff ? Number(jobDiff["Outreach attempts"] || 0) : currentJob.outreachAttempts,
+          customerResponded:"Customer responded" in jobDiff ? jobDiff["Customer responded"] : currentJob.customerResponded,
+          completionDate:   "Completion date" in jobDiff   ? jobDiff["Completion date"] : currentJob.completionDate,
+          serviceType:      "Service type" in jobDiff      ? jobDiff["Service type"] : currentJob.serviceType,
+          propertySnapshot: "Property snapshot" in jobDiff ? jobDiff["Property snapshot"] : currentJob.propertySnapshot,
+          notesFromLuke:    "Notes from Luke" in jobDiff   ? jobDiff["Notes from Luke"] : currentJob.notesFromLuke,
+          concerns:         "Concerns" in jobDiff          ? jobDiff["Concerns"] : currentJob.concerns,
+          leadOrigin:       "Lead origin" in jobDiff       ? jobDiff["Lead origin"] : currentJob.leadOrigin,
+        });
       }
 
-      if (Object.keys(diff).length === 0) {
-        toast("No changes");
+      if (hasClientChanges && currentJob.clientId) {
+        const params = new URLSearchParams({ action: "update-client" });
+        if (apiKey) params.set("key", apiKey);
+        const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientId: currentJob.clientId, fields: clientDiff }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        // Patch local state
+        if ("Full name" in clientDiff) {
+          currentJob.clientFullName = clientDiff["Full name"];
+          currentJob.clientName = clientDiff["Full name"] || currentJob.clientName;
+        }
+        if ("Name" in clientDiff)    currentJob.clientFirstName = clientDiff["Name"];
+        if ("Phone" in clientDiff)   currentJob.clientPhone     = clientDiff["Phone"];
+        if ("Email" in clientDiff)   currentJob.clientEmail     = clientDiff["Email"];
+        if ("Address" in clientDiff) currentJob.clientAddress   = clientDiff["Address"];
+        if ("Source" in clientDiff)  currentJob.clientSource    = clientDiff["Source"];
+      }
+
+      setSaveStatus("saved");
+      saveBtn.textContent = prevLabel;
+      saveBtn.disabled = false;
+
+      if (closeAfter) {
+        // closeModal() itself triggers a load(); don't double-load here
         closeModal();
-        return;
+      } else if (reloadAfter) {
+        load({ preservePosition: true });
+      } else {
+        // Fade the "Saved" pill back to clean after a moment
+        setTimeout(() => {
+          if (saveStatusEl.classList.contains("saved")) setSaveStatus("clean");
+        }, 1800);
       }
-
-      // If user changed Pipeline stage and didn't override Lead status,
-      // strip Lead status from diff so the server auto-maps it.
-      if (diff["Pipeline stage"] && diff["Lead status"]) {
-        // user chose explicit value for both — let it through
-      }
-
-      const params = new URLSearchParams({ action: "update" });
-      if (apiKey) params.set("key", apiKey);
-      const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: currentJob.id, fields: diff }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-
-      toast("Saved");
-      closeModal();
-      load();
     } catch (err) {
+      setSaveStatus("error");
       toast("Save failed: " + err.message, true);
       saveBtn.disabled = false;
-      saveBtn.textContent = "Save";
+      saveBtn.textContent = prevLabel;
+    } finally {
+      saveInFlight = false;
+      if (pendingAfterSave) {
+        pendingAfterSave = false;
+        // Re-trigger an auto-save shortly in case more changes happened mid-flight
+        setTimeout(markDirty, 50);
+      }
     }
-  });
+  }
+
+  saveBtn.addEventListener("click", () => performSave({ closeAfter: true }));
 
   function toast(msg, isErr = false) {
     const el = document.getElementById("toast");
@@ -1336,6 +1659,7 @@
           <div>Tap a workflow to get started, or just type what happened on your phone.</div>
           <div class="workflow-buttons">
             <button data-workflow="NEW CLIENT">+ New client</button>
+            <button data-workflow="NEW JOB">+ Job (existing)</button>
             <button data-workflow="OUTREACH">Outreach</button>
             <button data-workflow="QUOTED">Quoted</button>
             <button data-workflow="BOOKED">Booked</button>
@@ -1512,6 +1836,205 @@
     updateContextStrip();
     _origOpenEditModal(jobId);
   };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // ─── New-job-for-existing-client modal (FAB) ─────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
+  const newjobBackdrop = document.getElementById("newjob-backdrop");
+  const newjobSheet    = document.getElementById("newjob-sheet");
+  const newjobBody     = document.getElementById("newjob-body");
+  const newjobSaveBtn  = document.getElementById("newjob-save");
+  const newjobCancel   = document.getElementById("newjob-cancel");
+  const newjobFab      = document.getElementById("newjob-fab");
+  let newjobSelectedClient = null;
+  let newjobSearchTimer = null;
+
+  function openNewJobModal(prefillClient = null) {
+    newjobSelectedClient = prefillClient;
+    renderNewJobBody();
+    newjobBackdrop.classList.add("open");
+    newjobSheet.classList.add("open");
+    newjobSaveBtn.disabled = !newjobSelectedClient;
+    if (!prefillClient) {
+      // Kick off an initial "recent clients" search so the user sees options
+      runClientSearch("");
+    }
+  }
+  function closeNewJobModal() {
+    newjobBackdrop.classList.remove("open");
+    newjobSheet.classList.remove("open");
+    newjobSelectedClient = null;
+  }
+
+  function renderNewJobBody() {
+    const c = newjobSelectedClient;
+    const stageOptions = ["🆕 New lead", "💬 Quoted", "📞 Contacted", "📅 Booked"];
+    const originOptions = ["", "Repeat", "Referral", "Yelp", "Angi", "Google", "Facebook", "Phone", "Door-knock", "Other"];
+    newjobBody.innerHTML = `
+      <div class="section-header">Client <span class="hint">${c ? "existing client" : "pick one"}</span></div>
+      ${c ? `
+        <div class="selected-client-card">
+          <div class="info">
+            <div class="name">${escapeHtml(c.name)}</div>
+            <div class="meta">${escapeHtml([c.phone, c.email, c.address].filter(Boolean).join(" · ")) || "—"}</div>
+          </div>
+          <button type="button" class="change-btn" id="newjob-change-client">Change</button>
+        </div>
+      ` : `
+        <div class="field">
+          <label>Search by name, phone, email, or address</label>
+          <input type="text" id="newjob-client-query" placeholder="e.g. Sarah, 215555, smith@..." autocomplete="off" />
+          <div class="client-search-results" id="newjob-client-results">
+            <div class="client-search-empty">Searching…</div>
+          </div>
+        </div>
+      `}
+
+      <div class="section-header">Job</div>
+
+      <div class="field">
+        <label>Service type</label>
+        <input type="text" id="nj-service-type" placeholder="e.g. House wash, Driveway, Roof" />
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Pipeline stage</label>
+          <select id="nj-pipeline-stage">
+            ${stageOptions.map(s => `<option value="${escapeHtml(s)}"${s === "🆕 New lead" ? " selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Lead origin</label>
+          <select id="nj-lead-origin">
+            ${originOptions.map(s => `<option value="${escapeHtml(s)}"${s === "Repeat" ? " selected" : ""}>${escapeHtml(s || "—")}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Quote amount</label>
+          <input type="number" inputmode="decimal" step="any" id="nj-quote-amount" placeholder="optional" />
+        </div>
+        <div class="field">
+          <label>Booking date</label>
+          <input type="date" id="nj-booking-date" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Property snapshot</label>
+        <textarea id="nj-property-snapshot" placeholder="sqft, stories, material, anything to remember"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="nj-notes" placeholder="anything Luke wants on the record"></textarea>
+      </div>
+    `;
+
+    if (!c) {
+      const queryEl = document.getElementById("newjob-client-query");
+      queryEl.addEventListener("input", () => {
+        if (newjobSearchTimer) clearTimeout(newjobSearchTimer);
+        newjobSearchTimer = setTimeout(() => runClientSearch(queryEl.value), 220);
+      });
+      queryEl.focus();
+    } else {
+      document.getElementById("newjob-change-client").addEventListener("click", () => {
+        newjobSelectedClient = null;
+        newjobSaveBtn.disabled = true;
+        renderNewJobBody();
+        runClientSearch("");
+      });
+    }
+  }
+
+  async function runClientSearch(query) {
+    const resultsEl = document.getElementById("newjob-client-results");
+    if (!resultsEl) return;
+    resultsEl.innerHTML = `<div class="client-search-empty">Searching…</div>`;
+    try {
+      const params = new URLSearchParams({ action: "search-clients", query });
+      if (apiKey) params.set("key", apiKey);
+      const r = await fetch(`${apiBase}/api/ops?${params.toString()}`);
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      const matches = data.matches || [];
+      if (!matches.length) {
+        resultsEl.innerHTML = `<div class="client-search-empty">No clients match. Try a different search, or use the chat to add a brand-new client.</div>`;
+        return;
+      }
+      resultsEl.innerHTML = matches.map(m => `
+        <div class="client-result" data-id="${escapeHtml(m.id)}">
+          <div class="name">${escapeHtml(m.name)}</div>
+          <div class="meta">${escapeHtml([m.phone, m.email, m.address].filter(Boolean).join(" · ")) || "—"}</div>
+        </div>
+      `).join("");
+      resultsEl.querySelectorAll(".client-result").forEach(row => {
+        row.addEventListener("click", () => {
+          const id = row.dataset.id;
+          const match = matches.find(m => m.id === id);
+          if (match) {
+            newjobSelectedClient = match;
+            newjobSaveBtn.disabled = false;
+            renderNewJobBody();
+          }
+        });
+      });
+    } catch (err) {
+      resultsEl.innerHTML = `<div class="client-search-empty" style="color:#a82a25">Search failed: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  newjobFab.addEventListener("click", () => openNewJobModal());
+  newjobBackdrop.addEventListener("click", closeNewJobModal);
+  newjobCancel.addEventListener("click", closeNewJobModal);
+
+  newjobSaveBtn.addEventListener("click", async () => {
+    if (!newjobSelectedClient) {
+      toast("Pick a client first", true);
+      return;
+    }
+    const serviceType = document.getElementById("nj-service-type").value.trim();
+    if (!serviceType) {
+      toast("Service type is required", true);
+      return;
+    }
+    const fields = {
+      "Service type":   serviceType,
+      "Pipeline stage": document.getElementById("nj-pipeline-stage").value,
+      "Lead origin":    document.getElementById("nj-lead-origin").value,
+    };
+    const qa = document.getElementById("nj-quote-amount").value;
+    if (qa !== "")                                            fields["Quote amount"] = Number(qa);
+    if (document.getElementById("nj-booking-date").value)     fields["Booking date"] = document.getElementById("nj-booking-date").value;
+    if (document.getElementById("nj-property-snapshot").value) fields["Property snapshot"] = document.getElementById("nj-property-snapshot").value;
+    if (document.getElementById("nj-notes").value)            fields["Notes from Luke"] = document.getElementById("nj-notes").value;
+
+    newjobSaveBtn.disabled = true;
+    newjobSaveBtn.textContent = "Creating…";
+    try {
+      const params = new URLSearchParams({ action: "create-job" });
+      if (apiKey) params.set("key", apiKey);
+      const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: newjobSelectedClient.id, fields }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      toast("Job created");
+      closeNewJobModal();
+      load({ preservePosition: true });
+    } catch (err) {
+      toast("Create failed: " + err.message, true);
+      newjobSaveBtn.disabled = false;
+    } finally {
+      newjobSaveBtn.textContent = "Create job";
+    }
+  });
 
   // ── Boot ─────────────────────────────────────────────────────────────
   load();

@@ -138,13 +138,17 @@ async function handleData(req, res) {
       const formula = `OR(${chunk.map(id => `RECORD_ID()='${id}'`).join(",")})`;
       const clients = await airtableGet(AT_CLIENTS, {
         filterByFormula: formula,
-        "fields[]": ["Name", "Full name", "Phone", "Address"],
+        "fields[]": ["Name", "Full name", "Phone", "Email", "Address", "Source"],
       });
       for (const c of clients) {
         clientMap[c.id] = {
           name:    c.fields?.["Full name"] || c.fields?.["Name"] || "(unnamed)",
+          firstName: c.fields?.["Name"] || "",
+          fullName: c.fields?.["Full name"] || "",
           phone:   c.fields?.["Phone"]   || "",
+          email:   c.fields?.["Email"]   || "",
           address: c.fields?.["Address"] || "",
+          source:  c.fields?.["Source"]  || "",
         };
       }
     }
@@ -160,8 +164,12 @@ async function handleData(req, res) {
       jobId:            f["Job ID"]            || "",
       clientId,
       clientName:       client?.name           || "(no client)",
+      clientFirstName:  client?.firstName      || "",
+      clientFullName:   client?.fullName       || "",
       clientPhone:      client?.phone          || "",
+      clientEmail:      client?.email          || "",
       clientAddress:    client?.address        || "",
+      clientSource:     client?.source         || "",
       serviceType:      f["Service type"]      || "",
       propertySnapshot: f["Property snapshot"] || "",
       quote:            f["Quote"]             || "",
@@ -221,7 +229,12 @@ async function handleData(req, res) {
 const EDITABLE_FIELDS = new Set([
   "Pipeline stage", "Lead status", "Booking date", "Quote amount", "Quote date",
   "Last touch", "Outreach attempts", "Notes from Luke", "Customer responded",
-  "Completion date", "Final paid", "Concerns", "Service type",
+  "Completion date", "Final paid", "Concerns", "Service type", "Lead origin",
+  "Property snapshot", "Quote",
+]);
+
+const EDITABLE_CLIENT_FIELDS = new Set([
+  "Name", "Full name", "Phone", "Email", "Address", "Source",
 ]);
 
 async function handleUpdate(req, res) {
@@ -274,6 +287,150 @@ async function handleUpdate(req, res) {
     console.error("[ops/update] Airtable error:", data.error, "fields:", cleaned);
     return res.status(400).json({ error: data.error.message || data.error.type, fieldsSent: cleaned });
   }
+  return res.status(200).json({ ok: true, jobId: data.id, fields: data.fields });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Action: update-client — PATCH a Client from the Kanban edit modal
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleUpdateClient(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const { clientId, fields } = req.body || {};
+  if (!clientId || !/^rec[A-Za-z0-9]{14}$/.test(clientId)) {
+    return res.status(400).json({ error: "invalid clientId" });
+  }
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+    return res.status(400).json({ error: "fields must be an object" });
+  }
+
+  const incoming = Object.keys(fields);
+  const rejected = incoming.filter(k => !EDITABLE_CLIENT_FIELDS.has(k));
+  if (rejected.length) {
+    return res.status(400).json({ error: `not editable from this UI: ${rejected.join(", ")}` });
+  }
+
+  const cleaned = {};
+  for (const [k, v] of Object.entries(fields)) {
+    cleaned[k] = v === "" || v === undefined ? null : v;
+  }
+
+  const r = await fetch(`${airtableUrl(AT_CLIENTS)}/${clientId}`, {
+    method: "PATCH",
+    headers: airtableHeaders(),
+    body: JSON.stringify({ fields: cleaned, typecast: true }),
+  });
+  const data = await r.json();
+  if (data.error) {
+    console.error("[ops/update-client] Airtable error:", data.error, "fields:", cleaned);
+    return res.status(400).json({ error: data.error.message || data.error.type, fieldsSent: cleaned });
+  }
+  return res.status(200).json({ ok: true, clientId: data.id, fields: data.fields });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Action: search-clients — typeahead lookup for the new-job modal
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleSearchClients(req, res) {
+  const query = (req.query?.query || "").toString().trim();
+  const limit = Math.min(parseInt(req.query?.limit || "20", 10) || 20, 50);
+  const fieldsList = ["Name", "Full name", "Phone", "Email", "Address", "Source"];
+
+  let records;
+  if (!query) {
+    // No query → return most recent clients (by First contacted desc)
+    records = await airtableGet(AT_CLIENTS, {
+      maxRecords: limit,
+      "fields[]": fieldsList,
+      "sort[0][field]": "First contacted",
+      "sort[0][direction]": "desc",
+    });
+  } else {
+    const safe = query.replace(/'/g, "\\'");
+    const digits = query.replace(/\D/g, "");
+    const lower = safe.toLowerCase();
+    const clauses = [
+      `SEARCH(LOWER('${lower}'), LOWER({Name}&''))`,
+      `SEARCH(LOWER('${lower}'), LOWER({Full name}&''))`,
+      `SEARCH(LOWER('${lower}'), LOWER({Email}&''))`,
+      `SEARCH(LOWER('${lower}'), LOWER({Address}&''))`,
+    ];
+    if (digits) clauses.push(`SEARCH('${digits}', REGEX_REPLACE({Phone}&'', '\\\\D', ''))`);
+    records = await airtableGet(AT_CLIENTS, {
+      filterByFormula: `OR(${clauses.join(",")})`,
+      maxRecords: limit,
+      "fields[]": fieldsList,
+    });
+  }
+
+  return res.status(200).json({
+    matches: records.map(r => ({
+      id: r.id,
+      name:    r.fields["Full name"] || r.fields["Name"] || "(unnamed)",
+      phone:   r.fields["Phone"]   || "",
+      email:   r.fields["Email"]   || "",
+      address: r.fields["Address"] || "",
+      source:  r.fields["Source"]  || "",
+    })),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Action: create-job — create a new Job for an existing Client
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleCreateJob(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const { clientId, fields = {} } = req.body || {};
+  if (!clientId || !/^rec[A-Za-z0-9]{14}$/.test(clientId)) {
+    return res.status(400).json({ error: "invalid clientId" });
+  }
+
+  const serviceType = (fields["Service type"] || "").trim();
+  if (!serviceType) return res.status(400).json({ error: "Service type required" });
+
+  const pipelineStage = fields["Pipeline stage"] || "🆕 New lead";
+
+  // Derive a Job ID label from the client's first name + service type if not provided
+  let jobLabel = fields["Job ID"];
+  if (!jobLabel) {
+    try {
+      const cr = await fetch(`${airtableUrl(AT_CLIENTS)}/${clientId}`, { headers: airtableHeaders() });
+      const cd = await cr.json();
+      const first = (cd?.fields?.["Name"] || cd?.fields?.["Full name"] || "").split(/\s+/)[0];
+      if (first) jobLabel = `${first} – ${serviceType}`;
+    } catch {}
+  }
+
+  const out = {
+    "Client":         [clientId],
+    "Service type":   serviceType,
+    "Pipeline stage": pipelineStage,
+    "Create date":    todayISO(),
+  };
+  if (jobLabel)                          out["Job ID"]            = jobLabel;
+  if (fields["Lead origin"])             out["Lead origin"]       = fields["Lead origin"];
+  if (fields["Property snapshot"])       out["Property snapshot"] = fields["Property snapshot"];
+  if (fields["Quote"])                   out["Quote"]             = fields["Quote"];
+  if (fields["Quote amount"] != null && fields["Quote amount"] !== "") {
+    out["Quote amount"] = Number(fields["Quote amount"]);
+  }
+  if (fields["Quote date"])              out["Quote date"]        = fields["Quote date"];
+  if (fields["Booking date"])            out["Booking date"]      = fields["Booking date"];
+  if (fields["Notes from Luke"])         out["Notes from Luke"]   = fields["Notes from Luke"];
+  if (fields["Concerns"])                out["Concerns"]          = fields["Concerns"];
+
+  // Auto-stamp companion fields for the chosen stage
+  const mapped = STAGE_TO_LEAD_STATUS[pipelineStage];
+  if (mapped !== undefined && mapped !== null) out["Lead status"] = mapped;
+  if (pipelineStage === "💬 Quoted" && !out["Quote date"]) out["Quote date"] = todayISO();
+  if (pipelineStage === "📞 Contacted" && !out["Last touch"]) out["Last touch"] = todayISO();
+  if (pipelineStage === "✅ Job done" && !out["Completion date"]) out["Completion date"] = todayISO();
+
+  const data = await airtablePost(AT_JOBS, out);
   return res.status(200).json({ ok: true, jobId: data.id, fields: data.fields });
 }
 
@@ -690,6 +847,21 @@ async function updateJobTool({ jobId, fields }) {
   return { jobId: data.id, fieldsWritten: out };
 }
 
+async function updateClientTool({ clientId, fields }) {
+  if (!clientId) return { error: "clientId required" };
+  if (!fields || typeof fields !== "object") return { error: "fields object required" };
+  const out = {};
+  const rejected = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (EDITABLE_CLIENT_FIELDS.has(k)) out[k] = v === "" ? null : v;
+    else rejected.push(k);
+  }
+  if (rejected.length) return { error: `not editable on Client: ${rejected.join(", ")}. Allowed: ${[...EDITABLE_CLIENT_FIELDS].join(", ")}` };
+  if (!Object.keys(out).length) return { error: "no editable fields supplied" };
+  const data = await airtablePatch(AT_CLIENTS, clientId, out);
+  return { clientId: data.id, fieldsWritten: out };
+}
+
 async function logOutreach({ jobId, note }) {
   if (!jobId) return { error: "jobId required" };
   const r = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { headers: airtableHeaders() });
@@ -830,6 +1002,8 @@ const TOOLS = [
     input_schema: { type: "object", properties: { clientId: { type: "string" }, jobIdLabel: { type: "string" }, serviceType: { type: "string" }, pipelineStage: { type: "string", enum: ["🆕 New lead", "💬 Quoted", "📞 Contacted", "📅 Booked", "✅ Job done", "❌ Lost"] }, quote: { type: "string" }, quoteAmount: { type: "number" }, propertySnapshot: { type: "string" }, sourceChannel: { type: "string" }, concerns: { type: "string" }, lastTouch: { type: "string" } }, required: ["clientId", "serviceType"] } },
   { name: "update_job",    description: "Update fields on a Job. Auto-stamps companion fields on stage changes.",
     input_schema: { type: "object", properties: { jobId: { type: "string" }, fields: { type: "object" } }, required: ["jobId", "fields"] } },
+  { name: "update_client", description: "Update Client fields (Name, Full name, Phone, Email, Address, Source). Use this when Luke says to update a customer's contact info. Pass the clientId (recXXXXXXXXXXXXXX) and a fields object with only the keys you want to change.",
+    input_schema: { type: "object", properties: { clientId: { type: "string" }, fields: { type: "object", description: "Allowed keys: Name, Full name, Phone, Email, Address, Source" } }, required: ["clientId", "fields"] } },
   { name: "log_outreach",  description: "Log a manual outreach attempt on a Job. Increments Outreach attempts, sets Last touch=today, appends '[YYYY-MM-DD] Outreach #N — note' to Notes from Luke, moves Pipeline stage → '📞 Contacted' (only if stage is empty/New lead/Quoted/Contacted), and creates a Funnel event.",
     input_schema: { type: "object", properties: { jobId: { type: "string" }, note: { type: "string" } }, required: ["jobId"] } },
   { name: "log_response",  description: "Log that the customer replied. Sets Customer responded=today (only if blank). If the customer is locking in a date, set alsoBookForDate.",
@@ -846,6 +1020,7 @@ const TOOL_IMPL = {
   create_client:  createClient,
   create_job:     createJobTool,
   update_job:     updateJobTool,
+  update_client:  updateClientTool,
   log_outreach:   logOutreach,
   log_response:   logResponse,
   book_calendar:  bookCalendar,
@@ -905,6 +1080,10 @@ ALWAYS search before creating. Phone = Client dedupe key. Job ID + Client link =
 If a search returns 2+ matches, ASK Luke which one. Never silently pick.
 After EVERY mutation, confirm in plain English (see above).
 
+USE PRELOADED CONTEXT WHEN AVAILABLE — if a "CURRENTLY SELECTED JOB" or "CURRENTLY SELECTED CLIENT" block is in the system context, those record IDs are confirmed-correct. Use them directly. DO NOT call search_jobs/search_clients to find what's already in front of you. That wastes a tool call and frequently misses (search uses name fragments — if Luke says "Sarah", the preloaded Sarah is the answer, not whatever search returns).
+
+UPDATING CLIENT INFO — to change a customer's phone, email, address, name, or source, use update_client with the clientId. NEVER use update_job for these — those fields don't exist on Job. If Luke says "update Sarah's phone to ___" and you have a selected clientId in context, call update_client immediately with { clientId, fields: { Phone: "___" } }.
+
 NEW LEAD ("add Sarah, 215-555-1234, wants house wash, came from Yelp"):
 1. search_clients by phone first (dedupe)
 2. create_client if no match (returns existing if dedupe hit)
@@ -950,6 +1129,17 @@ After Luke gives that, also gather: services they want, source (Yelp / referral 
 2. create_client + create_job with Pipeline = "🆕 New lead"
 3. Draft a first-quote text in Luke's voice (next section). If you don't have enough info to quote a real number (no sqft / stories / material), draft a SHORT introductory text instead that sets the call/visit and asks for the missing details.
 4. CONFIRM with itemized changes + the message text + offer to log it as Contacted via log_outreach.
+
+"[NEW JOB]" — This is for adding a NEW JOB to an EXISTING client (repeat customer, another property, follow-up service). It is NEVER for new clients. Reply: "OK, new job for an existing client. Who's it for, and what service?"
+1. search_clients by name/phone to find the existing client. If 2+ matches, ASK Luke which one.
+2. If NO match found, STOP and ASK: "No match for [name]. Want to make them a new client instead? (use [NEW CLIENT])" — DO NOT call create_client. Wait for Luke to confirm.
+3. Once you have the client + service type (and optionally quote, source, etc.), call create_job ONLY — never create_client — with Pipeline = "🆕 New lead" (or whatever stage Luke specifies). Lead origin defaults to "Repeat" for repeat customers unless Luke says otherwise.
+4. CONFIRM with itemized changes.
+
+REPEAT-CUSTOMER LANGUAGE (treat these as [NEW JOB], not [NEW CLIENT]):
+• "another job for [name]"  • "[name] wants us back"  • "[name] booked us again"
+• "new job for [existing customer]"  • "[name] from last year wants ___"
+• Any phrasing that names someone Luke has worked with before — when in doubt, search_clients first. If you get a hit, it's [NEW JOB]. Never silently create_client when Luke gives a name without a phone — search first.
 
 "[BOOKED]" — Reply: "Which lead and what date? Default time 8:30 AM, you can override."
 Once you have lead + date:
@@ -1022,12 +1212,101 @@ async function handleChat(req, res) {
     return res.status(400).json({ error: "messages array required" });
   }
 
-  const dynamicContext = [
+  // Pre-fetch the selected job + client so the model never has to guess what
+  // a record ID points to. Luke's UI shows the card in front of him — the AI
+  // should see the same details, not just an opaque rec ID.
+  let selectedJobInline   = null;
+  let selectedClientInline = null;
+  if (selectedJobId && /^rec[A-Za-z0-9]{14}$/.test(selectedJobId)) {
+    try {
+      const jr = await fetch(`${airtableUrl(AT_JOBS)}/${selectedJobId}`, { headers: airtableHeaders() });
+      const jd = await jr.json();
+      if (!jd.error) {
+        const linked = jd.fields["Client"] || [];
+        let cd = null;
+        if (linked[0]) {
+          const cr = await fetch(`${airtableUrl(AT_CLIENTS)}/${linked[0]}`, { headers: airtableHeaders() });
+          const cdr = await cr.json();
+          if (!cdr.error) cd = cdr;
+        }
+        selectedJobInline = {
+          jobRecId:       selectedJobId,
+          jobIdLabel:     jd.fields["Job ID"]        || "",
+          serviceType:    jd.fields["Service type"]  || "",
+          pipelineStage:  jd.fields["Pipeline stage"]|| "",
+          leadStatus:     jd.fields["Lead status"]   || "",
+          quoteAmount:    jd.fields["Quote amount"]  ?? null,
+          quoteDate:      jd.fields["Quote date"]    || null,
+          bookingDate:    jd.fields["Booking date"]  || null,
+          lastTouch:      jd.fields["Last touch"]    || null,
+          clientRecId:    cd?.id || null,
+          clientName:     cd?.fields?.["Full name"]  || cd?.fields?.["Name"] || "(no client)",
+          clientPhone:    cd?.fields?.["Phone"]      || "",
+          clientEmail:    cd?.fields?.["Email"]      || "",
+          clientAddress:  cd?.fields?.["Address"]    || "",
+          clientSource:   cd?.fields?.["Source"]     || "",
+        };
+        if (cd && !selectedClientId) selectedClientInline = { ...selectedJobInline, fromJob: true };
+      }
+    } catch (e) { console.error("[ops/chat] preload job failed:", e.message); }
+  }
+  if (selectedClientId && /^rec[A-Za-z0-9]{14}$/.test(selectedClientId) && !selectedClientInline) {
+    try {
+      const cr = await fetch(`${airtableUrl(AT_CLIENTS)}/${selectedClientId}`, { headers: airtableHeaders() });
+      const cd = await cr.json();
+      if (!cd.error) {
+        selectedClientInline = {
+          clientRecId:   selectedClientId,
+          clientName:    cd.fields["Full name"] || cd.fields["Name"] || "(unnamed)",
+          clientPhone:   cd.fields["Phone"]   || "",
+          clientEmail:   cd.fields["Email"]   || "",
+          clientAddress: cd.fields["Address"] || "",
+          clientSource:  cd.fields["Source"]  || "",
+        };
+      }
+    } catch (e) { console.error("[ops/chat] preload client failed:", e.message); }
+  }
+
+  const ctxLines = [
     `Today's date: ${todayISO()}`,
     view ? `Luke is currently viewing: ${view} (in his Kanban)` : null,
-    selectedJobId ? `Job currently selected: ${selectedJobId} — assume questions reference this job unless Luke names another` : null,
-    selectedClientId ? `Client currently selected: ${selectedClientId} — assume questions reference this client unless Luke names another` : null,
-  ].filter(Boolean).join("\n");
+  ];
+  if (selectedJobInline) {
+    ctxLines.push(
+      "",
+      "═════ CURRENTLY SELECTED JOB (Luke is looking at this card right now) ═════",
+      `Job ID label: ${selectedJobInline.jobIdLabel || "(unlabeled)"}`,
+      `Service type: ${selectedJobInline.serviceType || "—"}`,
+      `Pipeline stage: ${selectedJobInline.pipelineStage || "—"} · Lead status: ${selectedJobInline.leadStatus || "—"}`,
+      `Quote: ${selectedJobInline.quoteAmount != null ? "$" + selectedJobInline.quoteAmount : "—"}${selectedJobInline.quoteDate ? " (quoted " + selectedJobInline.quoteDate + ")" : ""}`,
+      `Booking date: ${selectedJobInline.bookingDate || "—"} · Last touch: ${selectedJobInline.lastTouch || "—"}`,
+      `Linked Client: ${selectedJobInline.clientName}${selectedJobInline.clientPhone ? " · " + selectedJobInline.clientPhone : ""}${selectedJobInline.clientEmail ? " · " + selectedJobInline.clientEmail : ""}`,
+      selectedJobInline.clientAddress ? `Address: ${selectedJobInline.clientAddress}` : null,
+      "",
+      `🔑 USE THESE RECORD IDs DIRECTLY — DO NOT SEARCH:`,
+      `   jobId    = ${selectedJobInline.jobRecId}`,
+      selectedJobInline.clientRecId ? `   clientId = ${selectedJobInline.clientRecId}` : null,
+      "",
+      `When Luke says "this job", "this client", "update Sarah's phone", "for them", etc., he is referring to the records above. Call update_job / update_client / log_outreach / log_response / book_calendar with these IDs immediately — DO NOT call search_jobs or search_clients first.`,
+      "════════════════════════════════════════════════════════════════════════",
+    );
+  } else if (selectedClientInline) {
+    ctxLines.push(
+      "",
+      "═════ CURRENTLY SELECTED CLIENT (Luke is looking at this client right now) ═════",
+      `Name: ${selectedClientInline.clientName}`,
+      `Phone: ${selectedClientInline.clientPhone || "—"} · Email: ${selectedClientInline.clientEmail || "—"}`,
+      selectedClientInline.clientAddress ? `Address: ${selectedClientInline.clientAddress}` : null,
+      `Source: ${selectedClientInline.clientSource || "—"}`,
+      "",
+      `🔑 USE THIS RECORD ID DIRECTLY — DO NOT SEARCH:`,
+      `   clientId = ${selectedClientInline.clientRecId}`,
+      "",
+      `When Luke references "this client", "them", or names a field to update, use this clientId with update_client / create_job / etc. directly — DO NOT call search_clients first.`,
+      "═══════════════════════════════════════════════════════════════════════════════",
+    );
+  }
+  const dynamicContext = ctxLines.filter(l => l !== null).join("\n");
 
   const anthropic = new Anthropic();
   const toolCalls = [];
@@ -1103,13 +1382,16 @@ export default async function handler(req, res) {
   const action = (req.query?.action || "").toString();
   try {
     switch (action) {
-      case "data":   return await handleData(req, res);
-      case "update":      return await handleUpdate(req, res);
-      case "delete":      return await handleDelete(req, res);
-      case "chat":        return await handleChat(req, res);
-      case "ingest-lead": return await handleIngestLead(req, res);
+      case "data":           return await handleData(req, res);
+      case "update":         return await handleUpdate(req, res);
+      case "update-client":  return await handleUpdateClient(req, res);
+      case "search-clients": return await handleSearchClients(req, res);
+      case "create-job":     return await handleCreateJob(req, res);
+      case "delete":         return await handleDelete(req, res);
+      case "chat":           return await handleChat(req, res);
+      case "ingest-lead":    return await handleIngestLead(req, res);
       default:
-        return res.status(400).json({ error: `unknown action '${action}'. Use ?action=data|update|chat` });
+        return res.status(400).json({ error: `unknown action '${action}'. Use ?action=data|update|update-client|search-clients|create-job|delete|chat` });
     }
   } catch (err) {
     console.error(`[ops/${action}] error:`, err);
