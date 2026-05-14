@@ -453,24 +453,57 @@ async function handleBackfillToDone(req, res) {
   const dryRun = req.query?.dryRun === "true" || req.query?.dryRun === "1";
   const cutoff = "2026-01-01"; // anything before this is a 2025-or-earlier job
 
-  // Look for jobs with Create date < cutoff that aren't already done or lost.
-  // We don't touch Lost jobs (those were intentionally marked) — only "old open" piles.
-  const formula = `AND(IS_BEFORE({Create date}, '${cutoff}'), {Pipeline stage}!='✅ Job done', {Pipeline stage}!='❌ Lost')`;
+  // Two ways a Job qualifies as "2025 or earlier":
+  //   1. Create date < 2026-01-01  (the obvious case)
+  //   2. Job ID encodes a year < 2026, e.g. "2024-062 Sue McElhaney" — Luke's
+  //      legacy records from imports often have a blank Create date but the
+  //      job-ID prefix is reliable.
+  // Either path makes it a target; we still exclude already-Done and Lost.
+  const formula = `AND(
+    {Pipeline stage}!='✅ Job done',
+    {Pipeline stage}!='❌ Lost',
+    OR(
+      IS_BEFORE({Create date}, '${cutoff}'),
+      AND(
+        REGEX_MATCH({Job ID}&'', '^20[0-2][0-9]-'),
+        VALUE(LEFT({Job ID}&'', 4)) < 2026
+      )
+    )
+  )`.replace(/\s+/g, " ");
+
   const records = await airtableGet(AT_JOBS, {
     filterByFormula: formula,
     "fields[]": ["Job ID", "Pipeline stage", "Create date", "Lead status", "Completion date"],
   });
 
+  // For each record, figure out the best Completion-date proxy
+  function completionProxy(r) {
+    if (r.fields["Completion date"]) return null; // already has one — leave alone
+    if (r.fields["Create date"])     return r.fields["Create date"];
+    const jobId = r.fields["Job ID"] || "";
+    const m = jobId.match(/^(20[0-2][0-9])-/);
+    if (m) return `${m[1]}-12-31`; // end of the year encoded in the Job ID
+    return todayISO();
+  }
+
   if (dryRun) {
+    // Bucket by why each record qualifies so Luke can sanity-check
+    const buckets = { byCreateDate: 0, byJobIdYear: 0 };
+    for (const r of records) {
+      if (r.fields["Create date"] && r.fields["Create date"] < cutoff) buckets.byCreateDate++;
+      else buckets.byJobIdYear++;
+    }
     return res.status(200).json({
       ok: true,
       dryRun: true,
       wouldUpdate: records.length,
-      sample: records.slice(0, 15).map(r => ({
+      bucket: buckets,
+      sample: records.slice(0, 20).map(r => ({
         id: r.id,
         jobId: r.fields["Job ID"] || "",
         currentStage: r.fields["Pipeline stage"] || "(none)",
         createDate: r.fields["Create date"] || "",
+        proxyCompletion: completionProxy(r),
       })),
     });
   }
@@ -481,18 +514,17 @@ async function handleBackfillToDone(req, res) {
   for (let i = 0; i < records.length; i += 10) {
     const chunk = records.slice(i, i + 10);
     const body = {
-      records: chunk.map(r => ({
-        id: r.id,
-        fields: {
-          "Pipeline stage": "✅ Job done",
-          "Lead status":    "Completed",
-          // Only set Completion date if blank — use Create date as proxy so
-          // historical jobs sort by their actual creation time.
-          ...(r.fields["Completion date"]
-            ? {}
-            : { "Completion date": r.fields["Create date"] || todayISO() }),
-        },
-      })),
+      records: chunk.map(r => {
+        const proxy = completionProxy(r);
+        return {
+          id: r.id,
+          fields: {
+            "Pipeline stage": "✅ Job done",
+            "Lead status":    "Completed",
+            ...(proxy ? { "Completion date": proxy } : {}),
+          },
+        };
+      }),
       typecast: true,
     };
     const r = await fetch(airtableUrl(AT_JOBS), {
