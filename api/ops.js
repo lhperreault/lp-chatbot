@@ -99,6 +99,7 @@ const VIEW_CONFIGS = {
   "all":       { layout: "kanban", label: "All Jobs",           filter: null },
   "booked":    { layout: "list",   label: "Booked Calendar",    filter: `{Pipeline stage}='📅 Booked'`,                                              sortField: "Booking date", sortDirection: "asc" },
   "contacted": { layout: "list",   label: "Waiting for Client", filter: `AND({Pipeline stage}='📞 Contacted', {Customer responded}=BLANK())`,        sortField: "Last touch",   sortDirection: "asc" },
+  "done":      { layout: "list",   label: "Job done",            filter: `{Pipeline stage}='✅ Job done'`,                                           sortField: "Completion date", sortDirection: "desc" },
 };
 
 const JOB_FIELDS_FOR_VIEW = [
@@ -432,6 +433,88 @@ async function handleCreateJob(req, res) {
 
   const data = await airtablePost(AT_JOBS, out);
   return res.status(200).json({ ok: true, jobId: data.id, fields: data.fields });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Action: backfill-2025-to-done — one-shot migration to flip every Job
+// with a Create date in 2025 or earlier to Pipeline stage = ✅ Job done.
+//
+//   POST /api/ops?action=backfill-2025-to-done&dryRun=1   → count only
+//   POST /api/ops?action=backfill-2025-to-done            → actually update
+//
+// Skips jobs already in Job done / Lost so the operation is idempotent and
+// preserves anything Luke already marked. Auto-fills Lead status=Completed
+// and a Completion date (uses Create date as proxy when Completion is blank
+// so the historical sort order makes sense).
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleBackfillToDone(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const dryRun = req.query?.dryRun === "true" || req.query?.dryRun === "1";
+  const cutoff = "2026-01-01"; // anything before this is a 2025-or-earlier job
+
+  // Look for jobs with Create date < cutoff that aren't already done or lost.
+  // We don't touch Lost jobs (those were intentionally marked) — only "old open" piles.
+  const formula = `AND(IS_BEFORE({Create date}, '${cutoff}'), {Pipeline stage}!='✅ Job done', {Pipeline stage}!='❌ Lost')`;
+  const records = await airtableGet(AT_JOBS, {
+    filterByFormula: formula,
+    "fields[]": ["Job ID", "Pipeline stage", "Create date", "Lead status", "Completion date"],
+  });
+
+  if (dryRun) {
+    return res.status(200).json({
+      ok: true,
+      dryRun: true,
+      wouldUpdate: records.length,
+      sample: records.slice(0, 15).map(r => ({
+        id: r.id,
+        jobId: r.fields["Job ID"] || "",
+        currentStage: r.fields["Pipeline stage"] || "(none)",
+        createDate: r.fields["Create date"] || "",
+      })),
+    });
+  }
+
+  // Real run: PATCH in batches of 10 (Airtable's limit per request)
+  let updated = 0;
+  const errors = [];
+  for (let i = 0; i < records.length; i += 10) {
+    const chunk = records.slice(i, i + 10);
+    const body = {
+      records: chunk.map(r => ({
+        id: r.id,
+        fields: {
+          "Pipeline stage": "✅ Job done",
+          "Lead status":    "Completed",
+          // Only set Completion date if blank — use Create date as proxy so
+          // historical jobs sort by their actual creation time.
+          ...(r.fields["Completion date"]
+            ? {}
+            : { "Completion date": r.fields["Create date"] || todayISO() }),
+        },
+      })),
+      typecast: true,
+    };
+    const r = await fetch(airtableUrl(AT_JOBS), {
+      method: "PATCH",
+      headers: airtableHeaders(),
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (data.error) {
+      console.error(`[ops/backfill-to-done] chunk ${i} error:`, data.error);
+      errors.push({ chunk: i, error: data.error.message || data.error.type });
+    } else {
+      updated += chunk.length;
+    }
+  }
+  return res.status(200).json({
+    ok: errors.length === 0,
+    updated,
+    skipped: records.length - updated,
+    errorsCount: errors.length,
+    errors,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1387,6 +1470,7 @@ export default async function handler(req, res) {
       case "update-client":  return await handleUpdateClient(req, res);
       case "search-clients": return await handleSearchClients(req, res);
       case "create-job":     return await handleCreateJob(req, res);
+      case "backfill-2025-to-done": return await handleBackfillToDone(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);

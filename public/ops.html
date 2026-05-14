@@ -93,6 +93,54 @@
   }
   .updated-strip .refresh-btn:hover { text-decoration: underline; }
 
+  /* ── Search bar (All Jobs + Job done views only) ────────────────────── */
+  .search-bar {
+    display: none; /* shown via JS only on All Jobs + Job done */
+    position: relative;
+    padding: 4px 16px 10px;
+  }
+  .search-bar.show { display: block; }
+  .search-bar input[type="search"] {
+    width: 100%;
+    background: var(--bg-soft);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 32px 9px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.3;
+    -webkit-appearance: none;
+    transition: background 120ms, border-color 120ms;
+  }
+  .search-bar input[type="search"]::-webkit-search-decoration,
+  .search-bar input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .search-bar input[type="search"]:focus {
+    outline: 0;
+    border-color: var(--accent);
+    background: #fff;
+  }
+  .search-bar .clear-btn {
+    display: none;
+    position: absolute;
+    right: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-hover);
+    color: var(--text-2);
+    border: 0;
+    border-radius: 50%;
+    width: 22px; height: 22px;
+    font-size: 11px; line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+  .search-bar.has-query .clear-btn { display: inline-flex; align-items: center; justify-content: center; }
+  .search-empty {
+    padding: 24px 16px; text-align: center;
+    color: var(--text-3); font-size: 13px;
+  }
+
   /* ── Stage tabs (kanban) ────────────────────────────────────────────── */
   .stage-tabs {
     display: flex; overflow-x: auto;
@@ -720,10 +768,15 @@
     <button data-view="all">All Jobs</button>
     <button data-view="booked">Booked Calendar</button>
     <button data-view="contacted">Waiting for Client</button>
+    <button data-view="done">Job done</button>
   </div>
   <div class="updated-strip">
     <span id="updated-text">—</span>
     <button class="refresh-btn" id="refresh-btn">↻ refresh</button>
+  </div>
+  <div class="search-bar" id="search-bar">
+    <input type="search" id="search-input" placeholder="Search by name or phone…" autocomplete="off" />
+    <button type="button" class="clear-btn" id="search-clear" aria-label="Clear search">✕</button>
   </div>
 </header>
 
@@ -831,6 +884,23 @@
   let currentJob = null; // job being edited
   let refreshTimer = null;
   let currentColumnIdx = 0; // which kanban column the user is on (preserved across reloads)
+  let searchQuery = ""; // typed search filter (only visible on All Jobs + Job done views)
+
+  // Views where the search bar is allowed to appear
+  const SEARCHABLE_VIEWS = new Set(["all", "done"]);
+
+  function jobMatchesSearch(j, q) {
+    if (!q) return true;
+    const lc = q.toLowerCase().trim();
+    const digits = q.replace(/\D/g, "");
+    const haystack = [
+      j.jobId, j.clientName, j.clientFullName, j.clientFirstName,
+      j.clientAddress, j.serviceType,
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (haystack.includes(lc)) return true;
+    if (digits && (j.clientPhone || "").replace(/\D/g, "").includes(digits)) return true;
+    return false;
+  }
 
   // Carry the auth key onto the Dashboard tab link
   const dashTab = document.getElementById("tab-dashboard");
@@ -968,10 +1038,58 @@
   // ── Render ───────────────────────────────────────────────────────────
   function render(opts = {}) {
     if (!currentData) return;
+    updateSearchBarVisibility();
     const main = document.getElementById("main");
-    if (currentData.layout === "kanban") renderKanban(main, currentData, opts.restoreColumn !== false);
-    else renderList(main, currentData);
+    const data = applySearchFilter(currentData);
+    if (data.layout === "kanban") renderKanban(main, data, opts.restoreColumn !== false);
+    else renderList(main, data);
   }
+
+  function applySearchFilter(data) {
+    const q = searchQuery.trim();
+    if (!q || !SEARCHABLE_VIEWS.has(data.viewKey)) return data;
+    if (data.layout === "kanban") {
+      const columns = data.columns.map(col => {
+        const filtered = col.jobs.filter(j => jobMatchesSearch(j, q));
+        return { ...col, jobs: filtered, count: filtered.length };
+      });
+      return { ...data, columns };
+    } else {
+      return { ...data, jobs: data.jobs.filter(j => jobMatchesSearch(j, q)) };
+    }
+  }
+
+  // Search bar — only visible on All Jobs + Job done
+  const searchBarEl = document.getElementById("search-bar");
+  const searchInputEl = document.getElementById("search-input");
+  const searchClearEl = document.getElementById("search-clear");
+
+  function updateSearchBarVisibility() {
+    const visible = SEARCHABLE_VIEWS.has(currentView);
+    searchBarEl.classList.toggle("show", visible);
+    if (!visible && searchQuery) {
+      // Switching away from a searchable view → drop the query so it doesn't
+      // linger and surprise the user when they come back.
+      searchQuery = "";
+      searchInputEl.value = "";
+      searchBarEl.classList.remove("has-query");
+    }
+  }
+
+  searchInputEl.addEventListener("input", () => {
+    searchQuery = searchInputEl.value;
+    searchBarEl.classList.toggle("has-query", !!searchQuery.trim());
+    // Don't preserve column on a search re-render — filtering can empty the
+    // current column, and the user wants to see hits, not stay at column 3.
+    render({ restoreColumn: false });
+  });
+  searchClearEl.addEventListener("click", () => {
+    searchQuery = "";
+    searchInputEl.value = "";
+    searchBarEl.classList.remove("has-query");
+    searchInputEl.focus();
+    render({ restoreColumn: true });
+  });
 
   function renderKanban(main, data, restoreColumn = true) {
     main.innerHTML = `
@@ -1055,6 +1173,11 @@
         }
         html += cardHtml(j, "booked");
       }
+    } else if (data.viewKey === "done") {
+      // done: list sorted newest completion first
+      for (const j of data.jobs) {
+        html += cardHtml(j, "done");
+      }
     } else {
       // contacted: just list, oldest last touch first
       for (const j of data.jobs) {
@@ -1086,6 +1209,12 @@
       if (j.clientName)  meta.push(`<span>${escapeHtml(j.clientName)}</span>`);
       if (j.lastTouch)   meta.push(`<span>last touch ${escapeHtml(fmtDateRelative(j.lastTouch))}</span>`);
       else               meta.push(`<span>no last-touch</span>`);
+    } else if (mode === "done") {
+      // done: client + completion date + phone (useful for finding past customers)
+      if (j.clientName)      meta.push(`<span>${escapeHtml(j.clientName)}</span>`);
+      if (j.completionDate)  meta.push(`<span>done ${escapeHtml(fmtDate(j.completionDate))}</span>`);
+      else if (j.createDate) meta.push(`<span>created ${escapeHtml(fmtDate(j.createDate))}</span>`);
+      if (j.clientPhone)     meta.push(`<span>${escapeHtml(j.clientPhone)}</span>`);
     } else {
       // kanban: show client + a relevant date
       if (j.clientName)  meta.push(`<span>${escapeHtml(j.clientName)}</span>`);
@@ -1601,6 +1730,7 @@
     { value: "all",       label: "view: All Jobs" },
     { value: "booked",    label: "view: Booked Calendar" },
     { value: "contacted", label: "view: Waiting for Client" },
+    { value: "done",      label: "view: Job done" },
   ];
   ctxView.innerHTML = VIEW_OPTIONS.map(o =>
     `<option value="${o.value}">${o.label}</option>`
@@ -1649,6 +1779,7 @@
       "all":       "All Jobs",
       "booked":    "Booked Calendar",
       "contacted": "Waiting for Client",
+      "done":      "Job done",
     })[v] || v;
   }
 
