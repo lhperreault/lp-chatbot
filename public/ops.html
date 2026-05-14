@@ -1712,12 +1712,40 @@
   const clearBtn = document.getElementById("chat-clear");
   const closeBtn = document.getElementById("chat-close");
 
+  // Workflow button handler shared by quick-actions and empty-state buttons.
+  // Most workflows route through the chat agent; "NEW JOB" instead opens the
+  // dedicated new-job modal (search by client name, fill the form, save).
+  function handleWorkflowButton(workflow) {
+    if (workflow === "NEW JOB") {
+      // If a job is selected in chat context, prefill the new-job modal with
+      // its client so Luke doesn't have to search again.
+      let prefill = null;
+      if (selectedJobId) {
+        const j = findJob(selectedJobId);
+        if (j && j.clientId) {
+          prefill = {
+            id:      j.clientId,
+            name:    j.clientFullName || j.clientName || "",
+            phone:   j.clientPhone   || "",
+            email:   j.clientEmail   || "",
+            address: j.clientAddress || "",
+            source:  j.clientSource  || "",
+          };
+        }
+      }
+      closeChat();
+      // Small delay so the chat slide-out animation can start before the
+      // new-job sheet slides in — otherwise both transitions fight on iOS.
+      setTimeout(() => openNewJobModal(prefill), 220);
+      return;
+    }
+    inputEl.value = `[${workflow}]`;
+    sendChat();
+  }
+
   // Wire up the persistent quick-action buttons above the input
   document.querySelectorAll("#chat-quick-actions [data-workflow]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      inputEl.value = `[${btn.dataset.workflow}]`;
-      sendChat();
-    });
+    btn.addEventListener("click", () => handleWorkflowButton(btn.dataset.workflow));
   });
   const openChatTab = document.getElementById("open-chat-btn");
   const ctxView = document.getElementById("ctx-view-select");
@@ -1799,13 +1827,7 @@
         </div>
       `;
       messagesEl.querySelectorAll("[data-workflow]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          // Workflow buttons auto-send the trigger — the AI doesn't act
-          // until it has the info, so this is safe (no Airtable/Calendar
-          // writes happen on the trigger turn alone)
-          inputEl.value = `[${btn.dataset.workflow}]`;
-          sendChat();
-        });
+        btn.addEventListener("click", () => handleWorkflowButton(btn.dataset.workflow));
       });
       return;
     }
@@ -2157,6 +2179,29 @@
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       toast("Job created");
+
+      // Push it to the chat so the agent has context next time Luke talks
+      // to it. We post as a system note (not as the assistant — the assistant
+      // didn't actually run this, we did) and select the new job so chat
+      // context points at it immediately.
+      const summary = [
+        `New job created for ${newjobSelectedClient.name}: ${serviceType}.`,
+        `Stage: ${fields["Pipeline stage"]}`,
+        fields["Lead origin"] ? `Lead origin: ${fields["Lead origin"]}` : null,
+        fields["Quote amount"] != null ? `Quote: $${fields["Quote amount"]}` : null,
+        fields["Booking date"] ? `Booking date: ${fields["Booking date"]}` : null,
+      ].filter(Boolean).join(" · ");
+      chatHistory.push({ role: "system", content: summary });
+      saveChatHistory();
+      if (data.jobId) {
+        selectedJobId = data.jobId;
+        updateContextStrip();
+      }
+      // If the chat sheet happens to be open, re-render so the system note
+      // shows up live. (Normally NEW JOB closes the chat first; this guards
+      // the FAB-only path where chat was already open in the background.)
+      renderChat();
+
       closeNewJobModal();
       load({ preservePosition: true });
     } catch (err) {
