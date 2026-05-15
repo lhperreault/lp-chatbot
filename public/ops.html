@@ -227,6 +227,37 @@
     flex-wrap: wrap; align-items: center;
   }
 
+  /* ── "Tried contacting them" inline card button ─────────────────────── */
+  .tried-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 8px; padding-top: 8px;
+    border-top: 1px dashed var(--border);
+    gap: 8px;
+  }
+  .tried-row .last-touch {
+    font-size: 11px; color: var(--text-2);
+    flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tried-row .last-touch strong { color: var(--text); font-weight: 500; }
+  .tried-row .tried-btn {
+    background: var(--bg-soft); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 12px; font-weight: 500;
+    cursor: pointer; flex-shrink: 0;
+    font-family: inherit;
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: background 100ms, border-color 100ms;
+  }
+  .tried-row .tried-btn:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+  .tried-row .tried-btn:active { background: var(--accent-soft); color: var(--accent-text); }
+  .tried-row .tried-btn.done {
+    background: rgba(0,135,107,0.12);
+    color: #0d6b53;
+    border-color: rgba(0,135,107,0.30);
+  }
+  .tried-row .tried-btn:disabled { opacity: 0.5; cursor: progress; }
+
   /* ── Notion-style tag pills ─────────────────────────────────────────── */
   .pill {
     display: inline-block; padding: 2px 8px; border-radius: 4px;
@@ -1128,6 +1159,14 @@
     trackEl.querySelectorAll(".card").forEach(el => {
       el.addEventListener("click", () => openEditModal(el.dataset.id));
     });
+    // Inline "Tried" buttons — must stop propagation so the card-click
+    // handler above doesn't also fire and open the edit modal.
+    trackEl.querySelectorAll("[data-tried]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        handleTriedClick(btn);
+      });
+    });
 
     // Jump to the preserved column WITHOUT smooth-scroll (instant restoration)
     if (targetIdx > 0) {
@@ -1189,6 +1228,54 @@
     main.querySelectorAll(".card").forEach(el => {
       el.addEventListener("click", () => openEditModal(el.dataset.id));
     });
+    main.querySelectorAll("[data-tried]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        handleTriedClick(btn);
+      });
+    });
+  }
+
+  // Stages where the "I tried contacting them" inline button makes sense.
+  // These are the active outreach stages — once a Job is Booked, Done, or
+  // Lost there's no follow-up to log anymore.
+  const TRIED_STAGES = new Set(["🆕 New lead", "💬 Quoted", "📞 Contacted"]);
+
+  // ── "Tried contacting them" inline handler ───────────────────────────
+  // Optimistic: stamp the button as done immediately, then call the API.
+  // On success, reload the kanban (preserving column) so the local state
+  // matches Airtable. On failure, revert the button.
+  async function handleTriedClick(btn) {
+    const jobId = btn.dataset.tried;
+    if (!jobId) return;
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const wasDone = btn.classList.contains("done");
+    btn.classList.add("done");
+    btn.textContent = "✓ Tried today";
+    try {
+      const params = new URLSearchParams({ action: "log-outreach" });
+      if (apiKey) params.set("key", apiKey);
+      const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      toast("Logged outreach");
+      // Reload kanban data so the card reflects the new stage (the
+      // log-outreach endpoint bumps stage → Contacted if it was earlier).
+      load({ preservePosition: true });
+    } catch (err) {
+      // Revert on failure so the user knows something went wrong
+      if (!wasDone) {
+        btn.classList.remove("done");
+        btn.textContent = "📞 Tried";
+      }
+      btn.disabled = false;
+      toast("Failed to log: " + err.message, true);
+    }
   }
 
   function cardHtml(j, mode) {
@@ -1227,6 +1314,26 @@
     if (j.outreachAttempts > 0) pills.push(`<span class="pill outreach">${j.outreachAttempts}× outreach</span>`);
     if (j.customerResponded) pills.push(`<span class="pill responded">replied</span>`);
 
+    // "Tried contacting them" inline button — only for the active outreach
+    // stages (New lead / Quoted / Contacted). Shown on kanban + contacted
+    // list, NOT on booked / done lists (no follow-up needed there).
+    const showTried = TRIED_STAGES.has(stage) && (mode === "kanban" || mode === "contacted");
+    let triedRow = "";
+    if (showTried) {
+      const triedToday = j.lastTouch === todayISO();
+      const lastTouchLabel = j.lastTouch
+        ? `Last tried <strong>${escapeHtml(fmtDateRelative(j.lastTouch))}</strong>${j.outreachAttempts > 0 ? ` · ${j.outreachAttempts}×` : ""}`
+        : `Not yet contacted`;
+      triedRow = `
+        <div class="tried-row" data-tried-row="${escapeHtml(j.id)}">
+          <span class="last-touch">${lastTouchLabel}</span>
+          <button type="button" class="tried-btn${triedToday ? " done" : ""}" data-tried="${escapeHtml(j.id)}"${triedToday ? "" : ""}>
+            ${triedToday ? "✓ Tried today" : "📞 Tried"}
+          </button>
+        </div>
+      `;
+    }
+
     return `
       <div class="card" data-id="${escapeHtml(j.id)}">
         <div class="card-row">
@@ -1235,6 +1342,7 @@
         </div>
         ${meta.length ? `<div class="card-meta">${meta.join(`<span class="sep">·</span>`)}</div>` : ""}
         ${pills.length ? `<div class="card-bottom">${pills.join("")}</div>` : ""}
+        ${triedRow}
       </div>
     `;
   }

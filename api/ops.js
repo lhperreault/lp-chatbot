@@ -1024,6 +1024,28 @@ async function handleBackfillAttribution(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: log-outreach — one-tap "I tried contacting them" button on
+// every Kanban card. Reuses the same tool logic the chat agent uses, so
+// the side effects are identical: increment Outreach attempts, set
+// Last touch=today, append a dated note, bump Pipeline stage to
+// 📞 Contacted (only if currently New lead / Quoted / Contacted / blank),
+// log a Funnel event.
+//
+//   POST /api/ops?action=log-outreach   body: { jobId, note? }
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleLogOutreach(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const { jobId, note } = req.body || {};
+  if (!jobId || !/^rec[A-Za-z0-9]{14}$/.test(jobId)) {
+    return res.status(400).json({ error: "invalid jobId" });
+  }
+  const result = await logOutreach({ jobId, note });
+  if (result.error) return res.status(400).json(result);
+  return res.status(200).json({ ok: true, ...result });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1983,6 +2005,7 @@ export default async function handler(req, res) {
       case "delete-sessions":         return await handleDeleteSessions(req, res);
       case "telegram-audit":          return await handleTelegramAudit(req, res);
       case "backfill-attribution":    return await handleBackfillAttribution(req, res);
+      case "log-outreach":            return await handleLogOutreach(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);
