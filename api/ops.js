@@ -693,6 +693,159 @@ async function handleEventOrigins(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: sessions-list — list unique Funnel-event sessions with their
+// attributes (source, referrer, page count, country, etc.) so Luke can
+// identify his own test sessions and purge them.
+//
+//   GET /api/ops?action=sessions-list&days=7&minHits=2
+//
+// Sorted by hits desc by default — likely test sessions float to the top
+// (Luke clicking around the site = lots of internal-nav page views in
+// one session, while real ad-click visitors view ~1.5 pages).
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleSessionsList(req, res) {
+  const days     = Math.max(1, Math.min(180, parseInt(req.query?.days || "7", 10) || 7));
+  const minHits  = Math.max(1, parseInt(req.query?.minHits || "1", 10) || 1);
+  const limit    = Math.max(1, Math.min(500, parseInt(req.query?.limit || "200", 10) || 200));
+  const cutoff   = new Date(Date.now() - days * 86400 * 1000).toISOString();
+
+  const records = await airtableGet(AT_FUNNEL, {
+    filterByFormula: `IS_AFTER({Timestamp}, DATETIME_PARSE('${cutoff}'))`,
+    "fields[]": ["Timestamp", "Event type", "UTM source", "UTM campaign", "Referrer", "Landing URL", "Session ID", "Country", "Internal"],
+  });
+
+  const sessions = new Map(); // sid -> { ...stats }
+  let noSessionId = 0;
+  for (const r of records) {
+    const f = r.fields || {};
+    const sid = f["Session ID"];
+    if (!sid) { noSessionId++; continue; }
+    let s = sessions.get(sid);
+    if (!s) {
+      const ref = ((f["Referrer"] || "").replace(/^https?:\/\//, "").split(/[/?#]/)[0]) || "";
+      s = {
+        sessionId:  sid,
+        firstSeen:  f["Timestamp"] || null,
+        lastSeen:   f["Timestamp"] || null,
+        source:     f["UTM source"] || "",
+        campaign:   f["UTM campaign"] || "",
+        referrer:   ref,
+        landingUrl: (f["Landing URL"] || "").slice(0, 120),
+        country:    f["Country"] || "",
+        internal:   f["Internal"] === true,
+        hits:       0,
+        eventTypes: {},
+        airtableIds: [], // record IDs so the delete endpoint can wipe them
+      };
+      sessions.set(sid, s);
+    }
+    s.hits++;
+    s.eventTypes[f["Event type"] || "?"] = (s.eventTypes[f["Event type"] || "?"] || 0) + 1;
+    s.airtableIds.push(r.id);
+    if (f["Timestamp"]) {
+      if (f["Timestamp"] < s.firstSeen) s.firstSeen = f["Timestamp"];
+      if (f["Timestamp"] > s.lastSeen)  s.lastSeen  = f["Timestamp"];
+    }
+    // Capture any non-empty values across the session in case the first
+    // record was missing them (shouldn't happen since first-touch sticks,
+    // but defensive)
+    if (!s.source   && f["UTM source"])   s.source   = f["UTM source"];
+    if (!s.referrer && f["Referrer"])     s.referrer = ((f["Referrer"] || "").replace(/^https?:\/\//, "").split(/[/?#]/)[0]) || "";
+    if (!s.country  && f["Country"])      s.country  = f["Country"];
+    if (f["Internal"] === true)           s.internal = true;
+  }
+
+  const list = [...sessions.values()]
+    .filter(s => s.hits >= minHits)
+    .sort((a, b) => b.hits - a.hits)
+    .slice(0, limit)
+    .map(s => ({ ...s, airtableIds: undefined, eventCount: s.airtableIds.length }));
+
+  return res.status(200).json({
+    days,
+    totalSessions: sessions.size,
+    eventsWithoutSessionId: noSessionId,
+    returned: list.length,
+    sessions: list,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Action: delete-sessions — bulk-delete all funnel events that belong to
+// the given Session IDs. Use this to purge Luke's test traffic from
+// historic data after sessions-list helps him pick the targets.
+//
+//   POST /api/ops?action=delete-sessions
+//   body: { sessionIds: ["abc-1234...", "..."], days: 30 }
+//
+// `days` (optional, default 30) scopes the search window — bigger numbers
+// fetch more events but cost more Airtable round-trips.
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleDeleteSessions(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const { sessionIds, days = 30, dryRun = false } = req.body || {};
+  if (!Array.isArray(sessionIds) || !sessionIds.length) {
+    return res.status(400).json({ error: "sessionIds must be a non-empty array" });
+  }
+  const sidSet = new Set(sessionIds);
+  const cutoff = new Date(Date.now() - Math.max(1, Math.min(180, days)) * 86400 * 1000).toISOString();
+
+  // Fetch funnel events in the window then filter client-side — Airtable
+  // formulas with long OR(...) lists get unwieldy.
+  const records = await airtableGet(AT_FUNNEL, {
+    filterByFormula: `IS_AFTER({Timestamp}, DATETIME_PARSE('${cutoff}'))`,
+    "fields[]": ["Session ID", "Timestamp", "Event type"],
+  });
+  const toDelete = records.filter(r => sidSet.has(r.fields?.["Session ID"]));
+
+  if (dryRun) {
+    return res.status(200).json({
+      ok: true,
+      dryRun: true,
+      sessionIdsRequested: sessionIds.length,
+      eventsFound: toDelete.length,
+      sampleEvents: toDelete.slice(0, 10).map(r => ({
+        id: r.id,
+        sessionId: r.fields["Session ID"],
+        eventType: r.fields["Event type"],
+        timestamp: r.fields["Timestamp"],
+      })),
+    });
+  }
+
+  // Airtable delete supports up to 10 record IDs per request via the
+  // records[] query-param batch endpoint.
+  let deleted = 0;
+  const errors = [];
+  for (let i = 0; i < toDelete.length; i += 10) {
+    const chunk = toDelete.slice(i, i + 10);
+    const qs = new URLSearchParams();
+    chunk.forEach(r => qs.append("records[]", r.id));
+    const r = await fetch(`${airtableUrl(AT_FUNNEL)}?${qs.toString()}`, {
+      method: "DELETE",
+      headers: airtableHeaders(),
+    });
+    const data = await r.json();
+    if (data.error) {
+      console.error("[ops/delete-sessions] chunk error:", data.error);
+      errors.push({ chunk: i, error: data.error.message || data.error.type });
+    } else {
+      deleted += (data.records || []).length;
+    }
+  }
+  return res.status(200).json({
+    ok: errors.length === 0,
+    deleted,
+    eventsFound: toDelete.length,
+    sessionIdsRequested: sessionIds.length,
+    errorsCount: errors.length,
+    errors,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1648,6 +1801,8 @@ export default async function handler(req, res) {
       case "backfill-2025-to-done":   return await handleBackfillToDone(req, res);
       case "setup-tracking-fields":   return await handleSetupTrackingFields(req, res);
       case "event-origins":           return await handleEventOrigins(req, res);
+      case "sessions-list":           return await handleSessionsList(req, res);
+      case "delete-sessions":         return await handleDeleteSessions(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);
