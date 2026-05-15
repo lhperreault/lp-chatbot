@@ -29,6 +29,38 @@
   // Where to send events. Same endpoint the widget already uses.
   var TRACK_URL = 'https://chatbot-t1bk.vercel.app/api/track';
 
+  // ── URL-based opt-out: handle ?lp_internal=1 / ?lp_internal=0 ──────
+  // localStorage is per-origin, so the dashboard at chatbot-t1bk.vercel.app
+  // can't set a flag that this script (running on lppressurewash.com) can
+  // read. Instead Luke marks a browser by visiting
+  // lppressurewash.com/?lp_internal=1 once — we catch that here, write the
+  // localStorage flag on THIS origin, and skip tracking for the visit.
+  try {
+    var urlParams = new URLSearchParams(window.location.search);
+    var markFlag = urlParams.get('lp_internal');
+    if (markFlag === '1') {
+      localStorage.setItem('lp_internal', '1');
+      // Visible confirmation banner — fixed bottom, dismisses on click
+      var b = document.createElement('div');
+      b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483647;background:#0d6b53;color:#fff;padding:14px 16px;border-radius:8px;font:600 14px -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.25);cursor:pointer;text-align:center;';
+      b.textContent = '✓ This browser is now marked internal. Your visits won\'t be tracked on the dashboard. Tap to dismiss.';
+      b.onclick = function () { b.remove(); };
+      if (document.body) document.body.appendChild(b);
+      else document.addEventListener('DOMContentLoaded', function () { document.body && document.body.appendChild(b); });
+      return; // skip tracking for THIS visit — Luke is just here to mark the device
+    }
+    if (markFlag === '0') {
+      localStorage.removeItem('lp_internal');
+      var b2 = document.createElement('div');
+      b2.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483647;background:#876012;color:#fff;padding:14px 16px;border-radius:8px;font:600 14px -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.25);cursor:pointer;text-align:center;';
+      b2.textContent = '✓ Internal flag removed. This browser will be tracked normally again. Tap to dismiss.';
+      b2.onclick = function () { b2.remove(); };
+      if (document.body) document.body.appendChild(b2);
+      else document.addEventListener('DOMContentLoaded', function () { document.body && document.body.appendChild(b2); });
+      return;
+    }
+  } catch (e) {}
+
   // ── Session ID — one per browser session ───────────────────────────
   var SESSION_KEY = 'lp_tracker_session_v1';
   function getSessionId() {

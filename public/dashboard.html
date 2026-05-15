@@ -163,7 +163,7 @@
   </div>
   <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
     <div class="internal-controls">
-      <button class="mark-btn" id="mark-internal-btn" title="Tag this browser as internal so its tracking events are filtered out of the dashboard">Mark this device internal</button>
+      <button class="mark-btn" id="mark-internal-btn" title="Tap once per browser/device. Opens lppressurewash.com to set the opt-out flag on the tracking domain. After that, every visit you make from this browser is excluded from dashboard numbers — works regardless of country.">Mark this device internal</button>
       <button class="toggle-btn" id="toggle-internal-btn" title="Show events filtered out by country/internal rules">Show internal</button>
     </div>
     <a id="ops-link" href="ops.html" style="color:#79c0ff; font-size:12px; text-decoration:none; padding:6px 10px; border:1px solid #21262d; border-radius:6px;">Kanban →</a>
@@ -336,10 +336,17 @@
   markBtn.addEventListener("click", () => {
     const isMarked = localStorage.getItem("lp_internal") === "1";
     if (isMarked) {
-      if (!confirm("This device is currently flagged as internal — its tracking events aren't being counted. Unflag it?")) return;
+      if (!confirm("This device is currently flagged as internal — its tracking events aren't being counted.\n\nUnflag it? (You'll also need to visit lppressurewash.com/?lp_internal=0 once to clear the flag on the tracking domain.)")) return;
       localStorage.removeItem("lp_internal");
+      window.open("https://lppressurewash.com/?lp_internal=0", "_blank", "noopener");
     } else {
       localStorage.setItem("lp_internal", "1");
+      // localStorage is per-domain. To actually flag this browser for the
+      // tracker (which runs on lppressurewash.com), we have to open the
+      // site once with ?lp_internal=1 so lp-tracker.js can write the flag
+      // on the right origin. Without this step the dashboard would show
+      // "marked" but events would still be counted.
+      window.open("https://lppressurewash.com/?lp_internal=1", "_blank", "noopener");
     }
     refreshMarkBtn();
   });
