@@ -147,6 +147,12 @@
   }
   .pill.country  { background: #2d2a1a; color: #e3b341; }
   .pill.internal { background: #3a1d1d; color: #ffa198; }
+
+  /* Action pills (Call/Text) inside the Partial leads card */
+  .pill.action-call { background: #1d3a2c; color: #7ee787; padding: 4px 10px; font-weight: 600; }
+  .pill.action-call:hover { background: #244d39; }
+  .pill.action-sms  { background: #1f3a52; color: #79c0ff; padding: 4px 10px; font-weight: 600; }
+  .pill.action-sms:hover  { background: #284a64; }
   .error-banner {
     background: #3a1d1d; color: #ffa198; padding: 12px 16px;
     border-radius: 8px; margin-bottom: 16px; font-size: 13px;
@@ -231,9 +237,16 @@
 
   <div class="row row-2">
     <div class="card">
+      <h2>📋 Partial leads — started form, didn't submit</h2>
+      <div id="partial-leads"></div>
+    </div>
+    <div class="card">
       <h2>🥶 Cold leads — needs another nudge</h2>
       <div id="cold-leads"></div>
     </div>
+  </div>
+
+  <div class="row">
     <div class="card">
       <div class="card-head">
         <h2>Recent activity (last 24h)</h2>
@@ -581,6 +594,56 @@
     }).join("");
   }
 
+  // Build a hours-ago / days-ago string from an ISO timestamp.
+  function ago(iso) {
+    if (!iso) return "";
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return "";
+    const mins = Math.floor((Date.now() - t) / 60000);
+    if (mins < 1)    return "just now";
+    if (mins < 60)   return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24)    return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 14)   return `${days}d ago`;
+    return `${Math.floor(days / 7)}w ago`;
+  }
+
+  // Format a US phone number for tel:/sms: links. Strips non-digits and
+  // prefixes country code if it looks like a 10-digit number.
+  function phoneHref(p) {
+    if (!p) return "";
+    const digits = p.replace(/\D/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11) return `+${digits}`;
+    return digits ? `+${digits}` : "";
+  }
+
+  function renderPartialLeads(leads) {
+    const el = document.getElementById("partial-leads");
+    if (!leads || !leads.length) {
+      el.innerHTML = `<div class="empty">No partial leads in the last ${currentDays}d. Anyone who started the form finished it. 🎉</div>`;
+      return;
+    }
+    el.innerHTML = leads.map(p => {
+      const href = phoneHref(p.phone);
+      const callLink = href ? `<a href="tel:${href}" class="pill action-call" style="text-decoration:none">📞 Call</a>` : "";
+      const smsLink  = href ? `<a href="sms:${href}" class="pill action-sms"  style="text-decoration:none;margin-left:4px">💬 Text</a>` : "";
+      const opsHref  = `ops.html${apiKey ? "?key=" + encodeURIComponent(apiKey) : ""}`;
+      return `
+        <div class="list-item">
+          <div>
+            <div><strong>${escapeHtml(p.name)}</strong>${p.phone ? ` · <a href="tel:${href}" style="color:#79c0ff;text-decoration:none">${escapeHtml(p.phone)}</a>` : ""}</div>
+            <div class="meta">
+              ${escapeHtml(ago(p.firstContacted))}${p.source ? ` · via ${escapeHtml(p.source)}` : ""}${p.address ? ` · ${escapeHtml(p.address.slice(0, 60))}${p.address.length > 60 ? "…" : ""}` : ""}
+            </div>
+          </div>
+          <div style="white-space:nowrap">${callLink}${smsLink}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
   // Cache the raw rows so filter changes don't require a re-fetch.
   let recentRowsCache = [];
 
@@ -690,6 +753,7 @@
       renderYelp(data.yelpTrend);
       renderRepeat(data.repeatActivity);
       renderCold(data.coldLeads);
+      renderPartialLeads(data.partialLeads || []);
       renderRecent(data.recentActivity);
       document.getElementById("last-updated").textContent = `updated ${fmtDate(data.generatedAt)}`;
     } catch (err) {

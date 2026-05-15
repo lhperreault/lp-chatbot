@@ -146,7 +146,7 @@ export default async function handler(req, res) {
     const currMs = Date.parse(cutoffCurr);
     const prevMs = Date.parse(cutoffPrev);
 
-    const [funnelRowsRaw, yelpRows, allJobs, recent24hRaw, formSubmits12wkRaw, coldJobs] = await Promise.all([
+    const [funnelRowsRaw, yelpRows, allJobs, recent24hRaw, formSubmits12wkRaw, coldJobs, recentClients] = await Promise.all([
       // Last 2N days of funnel events covers curr + prev windows
       fetchAll(AT_FUNNEL, { filterByFormula: `IS_AFTER({Timestamp}, DATETIME_PARSE('${cutoffPrev}'))` }),
       fetchAll(AT_YELP,   { filterByFormula: `IS_AFTER({Week ending}, DATETIME_PARSE('${cutoff12wk}'))` }),
@@ -166,6 +166,15 @@ export default async function handler(req, res) {
       fetchAll(AT_JOBS, {
         filterByFormula: `AND({Outreach attempts}>=2, {Customer responded}=BLANK(), NOT(FIND('Lost', {Pipeline stage}&'')), NOT(FIND('done', LOWER({Pipeline stage}&''))))`,
         "fields[]": ["Job ID", "Client", "Service type", "Pipeline stage", "Last touch", "Outreach attempts", "Notes from Luke"],
+      }),
+      // Clients created in the current window with a phone number — used to
+      // detect "partial leads": someone typed their name+phone on the form,
+      // an alert fired, but they never hit Submit (so no Job was created).
+      // We filter in JS for missing Jobs link rather than in the formula
+      // because empty-linked-record checks across base versions are fiddly.
+      fetchAll(AT_CLIENTS, {
+        filterByFormula: `AND(IS_AFTER({First contacted}, DATETIME_PARSE('${cutoffCurr}')), NOT({Phone}=BLANK()))`,
+        "fields[]": ["Name", "Full name", "Phone", "Email", "Address", "Source", "UTM source", "First contacted", "Jobs"],
       }),
     ]);
 
@@ -404,6 +413,28 @@ export default async function handler(req, res) {
       })
       .sort((a, b) => (a.bookingDate < b.bookingDate ? 1 : -1));
 
+    // ── Partial leads (started form but didn't submit) ──────────────────────
+    // A Client created in this window with a phone number but NO linked Jobs
+    // is, by construction, someone who fired the partial-capture flow in
+    // /api/estimate but never hit Submit. We sort newest-first so the most
+    // recent abandoners (still warm enough to follow up) are on top.
+    const partialLeads = (recentClients || [])
+      .filter(c => {
+        const jobs = c.fields["Jobs"];
+        return !jobs || (Array.isArray(jobs) && jobs.length === 0);
+      })
+      .map(c => ({
+        id:             c.id,
+        name:           c.fields["Full name"] || c.fields["Name"] || "(no name yet)",
+        phone:          c.fields["Phone"] || "",
+        email:          c.fields["Email"] || "",
+        address:        c.fields["Address"] || "",
+        source:         c.fields["Source"] || c.fields["UTM source"] || "",
+        firstContacted: c.fields["First contacted"] || null,
+      }))
+      .sort((a, b) => (a.firstContacted < b.firstContacted ? 1 : a.firstContacted > b.firstContacted ? -1 : 0))
+      .slice(0, 30);
+
     // ── Recent activity (last 24h) ─────────────────────────────────────────
     const recent = recent24h
       .map(r => ({
@@ -452,6 +483,7 @@ export default async function handler(req, res) {
       repeatActivity,
       coldLeads,
       recentActivity: recent,
+      partialLeads,
     });
   } catch (err) {
     console.error("[dashboard-data] error:", err);
