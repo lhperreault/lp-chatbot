@@ -1153,6 +1153,20 @@ export default async function handler(req, res) {
       // their phone, Luke wants the ping — that's a fresh signal of intent,
       // even if it's a repeat customer.
       notifyPartialLead(formData, attribution).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
+
+      // Log a "Partial captured" funnel event so the dashboard can count
+      // partials at the session level (and guarantee funnel monotonicity).
+      // Frontend partialSent flag already dedups within a single session, so
+      // this fires once per session at most. No-ops gracefully if Airtable
+      // or the funnel-events table is unavailable.
+      logFunnelEvent({
+        eventType: "Partial captured",
+        attribution,
+        sessionId,
+        clientId: partialClientId,
+        notes: `Captured ${formData.firstName || "(no name)"} · ${formData.phone || "(no phone)"}`,
+      }).catch(err => console.error("[partial funnel-event] error:", err));
+
       return res.status(200).json({ ok: true, partial: true, clientId: partialClientId, isNew: wasNew });
     } catch (err) {
       console.error("[estimate] partial branch error:", err);

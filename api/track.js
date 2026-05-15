@@ -18,6 +18,7 @@ const ALLOWED_EVENTS = new Set([
   "CTA click",
   "Form step 1",
   "Form step 2",
+  "Partial captured", // server-side fires this when /api/estimate?partial=true runs
   "Form submitted",
   "Chat engaged",
   "Quote sent",

@@ -514,26 +514,41 @@ export default async function handler(req, res) {
       .slice(0, 30);
 
     // ── Web funnel + marketing pipeline metrics ─────────────────────────────
-    // The funnel is monotonically decreasing as visitors drop off:
-    //   Sessions → CTA clicks → Partial captures → Form submits → Chatbot quotes
-    // "Landing page leads" is the full Partial-captures bucket (anyone who
-    // entered name+phone, including those who also submitted) — used as the
-    // starting point for the marketing pipeline (Quoted, Booked).
-    const sessionsInWindow = new Set();
+    // The funnel is monotonically decreasing as visitors drop off. We count
+    // each stage by UNIQUE SESSIONS, not raw event counts, so a single visitor
+    // who clicks 3 times = 1 CTA click in the funnel. To guarantee
+    // monotonicity (Sessions ≥ CTA ≥ Partial ≥ Submit ≥ Quote), each stage
+    // includes sessions that fired its own event OR any event from a deeper
+    // stage. If a session somehow partials without firing a CTA-click event
+    // (mobile autofill bypassing focus listeners, etc.), they still count as
+    // having "reached CTA" because they obviously got past that point.
+    const sBy = { page: new Set(), cta: new Set(), partial: new Set(), submit: new Set(), quote: new Set() };
     for (const r of funnelRows) {
-      if (r.fields["Event type"] !== "Page view") continue;
       const t = r.fields["Timestamp"];
-      if (t && Date.parse(t) >= currMs) {
-        const sid = r.fields["Session ID"];
-        if (sid) sessionsInWindow.add(sid);
-      }
+      if (!t || Date.parse(t) < currMs) continue;
+      const sid = r.fields["Session ID"];
+      if (!sid) continue;
+      const ev = r.fields["Event type"];
+      if (ev === "Page view")        sBy.page.add(sid);
+      else if (ev === "CTA click")   sBy.cta.add(sid);
+      else if (ev === "Partial captured") sBy.partial.add(sid);
+      else if (ev === "Form submitted")   sBy.submit.add(sid);
+      else if (ev === "Quote sent")       sBy.quote.add(sid);
     }
-    const sessionsCurr  = sessionsInWindow.size;
+    // Stage-roll-up: each lower stage is also "in" the higher stages because
+    // they obviously passed through them.
+    const submitSessions  = new Set([...sBy.submit, ...sBy.quote]);
+    const partialSessions = new Set([...sBy.partial, ...submitSessions]);
+    const ctaSessions     = new Set([...sBy.cta, ...partialSessions]);
+    const pageSessions    = new Set([...sBy.page, ...ctaSessions]);
+
+    const sessionsCurr  = pageSessions.size;
     const pageViewsCurr = eventCounts.curr["Page view"] || 0;
     const pagesPerSession = sessionsCurr ? +((pageViewsCurr / sessionsCurr).toFixed(2)) : 0;
-    const ctaClicksCurr = eventCounts.curr["CTA click"]      || 0;
-    const formSubsCurr  = eventCounts.curr["Form submitted"] || 0;
-    const quoteSentCurr = eventCounts.curr["Quote sent"]     || 0;
+    const ctaClicksCurr = ctaSessions.size;
+    const partialCurr   = partialSessions.size;
+    const formSubsCurr  = submitSessions.size;
+    const quoteSentCurr = sBy.quote.size;
 
     // Landing page leads = all clients in window with phone (inclusive of
     // submitted). Pipeline uses Job linkage to track which of those leads
@@ -618,13 +633,25 @@ export default async function handler(req, res) {
       // and the marketing pipeline (Landing-page leads → Quoted → Booked).
       // All percentages computed client-side from these raw counts.
       funnel: {
+        // Web inbound funnel — all counts are UNIQUE SESSIONS, with each
+        // lower stage rolled up into higher stages so we're monotonic by
+        // construction (a session that submitted but didn't fire a CTA
+        // click event still counts as "reached CTA").
         sessions:        sessionsCurr,
         pageViews:       pageViewsCurr,
         pagesPerSession,
         ctaClicks:       ctaClicksCurr,
-        partial:         landingLeadsCount, // inclusive — includes those who also submitted
+        partial:         partialCurr,
         formSubmits:     formSubsCurr,
         chatbotQuotes:   quoteSentCurr,
+        // Marketing pipeline is record-based: "Landing leads" counts every
+        // Client record from the widget (those who entered name+phone),
+        // regardless of session tracking. This is the right denominator
+        // for "how many leads did the landing page generate" → quoted/booked.
+        // For the first week after the Partial-captured event ships,
+        // landingLeads can be higher than funnel.partial because legacy
+        // partials don't have a tracked session — they'll converge as old
+        // data ages out.
         landingLeads:    landingLeadsCount,
         landingQuoted:   landingQuotedCount,
         landingBooked:   landingBookedCount,
