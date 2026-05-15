@@ -23,6 +23,7 @@ const ALLOWED_EVENTS = new Set([
   "Chat engaged",
   "Quote sent",
   "Booked",
+  "Telegram alert", // server-side audit log of notifyPartialLead/Lead/Quote/AdClick
 ]);
 
 function airtableUrl(table) {

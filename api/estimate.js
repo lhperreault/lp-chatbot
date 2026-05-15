@@ -318,10 +318,11 @@ async function bookAppointment(data) {
 // refreshed message with all quotes so far) and on confirm_booking.
 // Silently skips if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars aren't set.
 
+// Returns { ok, messageId?, error? } so callers can audit-log the result.
 async function sendTelegramNotification(text) {
   if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
     console.log("[telegram] not configured, skipping");
-    return;
+    return { ok: false, error: "not configured" };
   }
   try {
     const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -335,10 +336,37 @@ async function sendTelegramNotification(text) {
       }),
     });
     const data = await res.json();
-    if (!data.ok) console.log("[telegram] send error:", data);
+    if (!data.ok) {
+      console.log("[telegram] send error:", data);
+      return { ok: false, error: data.description || `http ${res.status}` };
+    }
+    return { ok: true, messageId: data.result?.message_id || null };
   } catch (err) {
     console.error("[telegram] send threw:", err);
+    return { ok: false, error: err.message || "threw" };
   }
+}
+
+// Audit helper — every notify* call wraps its send with this so the
+// dashboard's telegram-audit endpoint can show what was attempted vs what
+// actually delivered. Failures are still surfaced (just logged, not thrown).
+async function sendTelegramAlertWithAudit({ type, text, summary, sessionId, clientId, jobId, attribution }) {
+  const result = await sendTelegramNotification(text);
+  // Log a Funnel event row with the outcome — note that this is intentionally
+  // a different event type ("Telegram alert") from the user-visible funnel
+  // stages, so it shows up in the audit endpoint but not in dashboard KPIs.
+  const statusTag = result.ok ? "ok" : "FAILED";
+  const errorPart = result.ok ? "" : ` — ${result.error || "unknown"}`;
+  const notes = `[${type}] ${summary || ""} → ${statusTag}${errorPart}`;
+  logFunnelEvent({
+    eventType: "Telegram alert",
+    attribution,
+    sessionId,
+    clientId,
+    jobId,
+    notes,
+  }).catch(err => console.error("[telegram audit log] error:", err));
+  return result;
 }
 
 // Build a vCard 3.0 string from formData. iPhone Contacts opens .vcf
@@ -589,13 +617,21 @@ async function notifyQuote(state, formData, messages) {
       msgParts.push(`<pre>${htmlEscape(transcript)}</pre>`);
     }
 
-    await sendTelegramNotification(msgParts.join("\n"));
+    await sendTelegramAlertWithAudit({
+      type:       "Quote sent",
+      text:       msgParts.join("\n"),
+      summary:    `${formData?.firstName || "Customer"} · ${formData?.phone || ""}`,
+      sessionId:  state?.sessionId  || null,
+      clientId:   state?.clientId   || null,
+      jobId:      state?.jobId      || null,
+      attribution: state?.attribution || null,
+    });
   } catch (err) {
     console.error("[notifyQuote] error:", err);
   }
 }
 
-async function notifyPartialLead(formData, attribution) {
+async function notifyPartialLead(formData, attribution, ctx = {}) {
   try {
     const firstName = formData.firstName || "(no name yet)";
     const phone     = formData.phone     || "no phone";
@@ -616,7 +652,14 @@ async function notifyPartialLead(formData, attribution) {
     parts.push("");
     parts.push(`<i>If they finish, you'll see a 📥 New form submission ping next. If not, they bailed.</i>`);
 
-    await sendTelegramNotification(parts.join("\n"));
+    await sendTelegramAlertWithAudit({
+      type:       "Partial form",
+      text:       parts.join("\n"),
+      summary:    `${firstName} · ${phone}`,
+      sessionId:  ctx.sessionId || null,
+      clientId:   ctx.clientId  || null,
+      attribution,
+    });
     // Auto-attach a vCard so Luke can tap once on iPhone to add to Contacts.
     sendTelegramVCard(formData).catch(err => console.error("[vcard partial] error:", err));
   } catch (err) {
@@ -624,7 +667,7 @@ async function notifyPartialLead(formData, attribution) {
   }
 }
 
-async function notifyLead(formData, attribution) {
+async function notifyLead(formData, attribution, ctx = {}) {
   try {
     const firstName = formData.firstName || "Customer";
     const phone     = formData.phone     || "no phone";
@@ -645,7 +688,15 @@ async function notifyLead(formData, attribution) {
     parts.push("");
     parts.push(`<i>Chat starting now. You'll get a follow-up ping with the full quote + draft text if they engage. If they go quiet for 3 min mid-chat you'll get a 🕒 stale ping with the partial transcript.</i>`);
 
-    await sendTelegramNotification(parts.join("\n"));
+    await sendTelegramAlertWithAudit({
+      type:       "New form submission",
+      text:       parts.join("\n"),
+      summary:    `${firstName} · ${phone}`,
+      sessionId:  ctx.sessionId || null,
+      clientId:   ctx.clientId  || null,
+      jobId:      ctx.jobId     || null,
+      attribution,
+    });
     // Auto-attach a vCard so Luke can tap once on iPhone to add to Contacts.
     sendTelegramVCard(formData).catch(err => console.error("[vcard lead] error:", err));
   } catch (err) {
@@ -1113,7 +1164,13 @@ export default async function handler(req, res) {
       if (attribution?.landing_url) parts.push(`📄 Landing: ${htmlEscape(attribution.landing_url.slice(0, 120))}`);
       parts.push("");
       parts.push(`<i>Someone just clicked a paid-ad link. Watch for a 📋 / 📥 if they fill out the form within the next few minutes.</i>`);
-      sendTelegramNotification(parts.join("\n")).catch(err => console.error("[adClick] notify error:", err));
+      sendTelegramAlertWithAudit({
+        type:       "Ad click",
+        text:       parts.join("\n"),
+        summary:    label,
+        sessionId,
+        attribution,
+      }).catch(err => console.error("[adClick] notify error:", err));
       return res.status(200).json({ ok: true, adClick: true });
     } catch (err) {
       console.error("[estimate] adClick branch error:", err);
@@ -1152,7 +1209,7 @@ export default async function handler(req, res) {
       // when the same person visits in a new session/tab and re-enters
       // their phone, Luke wants the ping — that's a fresh signal of intent,
       // even if it's a repeat customer.
-      notifyPartialLead(formData, attribution).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
+      notifyPartialLead(formData, attribution, { sessionId, clientId: partialClientId }).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
 
       // Log a "Partial captured" funnel event so the dashboard can count
       // partials at the session level (and guarantee funnel monotonicity).
@@ -1225,7 +1282,7 @@ export default async function handler(req, res) {
     // followed by a full submission still produces the 📥 "submitted" ping.
     // Worst case if a customer resubmits: Luke gets two 📥 pings — that's
     // fine, the second one means "this person came back."
-    notifyLead(formData, attribution).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
+    notifyLead(formData, attribution, { sessionId, clientId: state.clientId, jobId: state.jobId }).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
     logFunnelEvent({ eventType: "Form submitted", attribution, sessionId, clientId: state.clientId }).catch(() => {});
 
     // Create a STUB Job in "🆕 New lead" stage so leads who bail mid-chat

@@ -846,6 +846,62 @@ async function handleDeleteSessions(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: telegram-audit — every notify* call writes a "Telegram alert"
+// funnel event with the outcome. This endpoint lets Luke verify what
+// actually pinged him over a window vs what was attempted.
+//
+//   GET /api/ops?action=telegram-audit&days=7
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleTelegramAudit(req, res) {
+  const days = Math.max(1, Math.min(180, parseInt(req.query?.days || "7", 10) || 7));
+  const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
+
+  const records = await airtableGet(AT_FUNNEL, {
+    filterByFormula: `AND({Event type}='Telegram alert', IS_AFTER({Timestamp}, DATETIME_PARSE('${cutoff}')))`,
+    "fields[]": ["Timestamp", "Notes", "Session ID", "UTM source"],
+    "sort[0][field]": "Timestamp",
+    "sort[0][direction]": "desc",
+  });
+
+  // Parse "[type] summary → status" out of the Notes field
+  const parsed = records.map(r => {
+    const notes = r.fields["Notes"] || "";
+    const m = notes.match(/^\[([^\]]+)\]\s*(.*?)\s*→\s*(ok|FAILED)(?:\s*—\s*(.*))?$/);
+    return {
+      id: r.id,
+      timestamp: r.fields["Timestamp"] || null,
+      sessionId: r.fields["Session ID"] || "",
+      utmSource: r.fields["UTM source"] || "",
+      type:      m ? m[1] : "?",
+      summary:   m ? m[2] : notes,
+      status:    m ? m[3] : "?",
+      error:     m && m[4] ? m[4] : null,
+      raw:       notes,
+    };
+  });
+
+  // Summary stats
+  const byType = {};
+  const byStatus = { ok: 0, FAILED: 0, "?": 0 };
+  for (const p of parsed) {
+    byType[p.type] ||= { ok: 0, FAILED: 0, "?": 0 };
+    byType[p.type][p.status] = (byType[p.type][p.status] || 0) + 1;
+    byStatus[p.status] = (byStatus[p.status] || 0) + 1;
+  }
+
+  return res.status(200).json({
+    days,
+    totalAlerts: parsed.length,
+    successes:   byStatus.ok,
+    failures:    byStatus.FAILED,
+    unparsed:    byStatus["?"],
+    byType,
+    alerts:      parsed.slice(0, 100),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1803,6 +1859,7 @@ export default async function handler(req, res) {
       case "event-origins":           return await handleEventOrigins(req, res);
       case "sessions-list":           return await handleSessionsList(req, res);
       case "delete-sessions":         return await handleDeleteSessions(req, res);
+      case "telegram-audit":          return await handleTelegramAudit(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);
