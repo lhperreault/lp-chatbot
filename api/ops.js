@@ -1040,10 +1040,11 @@ async function handleLogOutreach(req, res) {
   if (!jobId || !/^rec[A-Za-z0-9]{14}$/.test(jobId)) {
     return res.status(400).json({ error: "invalid jobId" });
   }
-  // Kanban-card "Tried" button: log the attempt but DON'T touch the pipeline
-  // stage. Luke moves stages explicitly (a New lead trying to clarify info
-  // before a quote should stay in New lead, not jump to Contacted).
-  const result = await logOutreach({ jobId, note, bumpStage: false });
+  // Kanban-card "Tried" button: only bump stage when leaving Quoted.
+  //   New lead + Tried   → stays in New lead (pre-quote clarification call)
+  //   Quoted + Tried     → moves to Contacted ("I'm now following up on quote")
+  //   Contacted + Tried  → stays in Contacted (already in the follow-up loop)
+  const result = await logOutreach({ jobId, note, bumpFrom: ["💬 Quoted"] });
   if (result.error) return res.status(400).json(result);
   return res.status(200).json({ ok: true, ...result });
 }
@@ -1476,7 +1477,7 @@ async function updateClientTool({ clientId, fields }) {
   return { clientId: data.id, fieldsWritten: out };
 }
 
-async function logOutreach({ jobId, note, bumpStage = true }) {
+async function logOutreach({ jobId, note, bumpFrom }) {
   if (!jobId) return { error: "jobId required" };
   const r = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { headers: airtableHeaders() });
   const data = await r.json();
@@ -1492,15 +1493,25 @@ async function logOutreach({ jobId, note, bumpStage = true }) {
     "Last touch":        todayISO(),
     "Notes from Luke":   newNotes,
   };
-  // Only auto-bump stage when explicitly requested (legacy chat-agent path).
-  // Luke's mental model for the stages:
-  //   🆕 New lead  = haven't done anything yet, or gathering info pre-quote
-  //   💬 Quoted    = sent them a quote
-  //   📞 Contacted = following up AFTER the quote
-  // So "Tried" outreach on a New lead does NOT mean Contacted — Luke might
-  // just be calling to clarify before quoting. Stage stays put unless the
-  // caller asks for it to move.
-  if (bumpStage && (!stage || ["🆕 New lead", "💬 Quoted", "📞 Contacted"].includes(stage))) {
+  // Stage-bump policy is controlled by the caller via `bumpFrom`:
+  //   - undefined / null   → legacy auto-bump (chat agent's [OUTREACH] tool)
+  //                          bumps from New lead / Quoted / Contacted → Contacted
+  //   - an array of stages → bumps to Contacted ONLY if the current stage is
+  //                          in that array. Lets each call site express its
+  //                          own intent.
+  //
+  // Luke's mental model:
+  //   🆕 New lead   = haven't acted, or gathering info pre-quote
+  //   💬 Quoted     = sent them a quote
+  //   📞 Contacted  = following up AFTER the quote
+  //
+  // Kanban "Tried" button passes bumpFrom=["💬 Quoted"]: a Tried tap on a
+  // Quoted lead means "following up on my quote" → bump to Contacted.
+  // A Tried tap on a New lead just logs the attempt — stage stays put
+  // because Luke could be just clarifying scope before quoting.
+  const defaultBumpFrom = ["🆕 New lead", "💬 Quoted", "📞 Contacted"];
+  const allowedStages = bumpFrom === undefined ? defaultBumpFrom : bumpFrom;
+  if (Array.isArray(allowedStages) && (allowedStages.length === 0 ? false : allowedStages.includes(stage || ""))) {
     updateFields["Pipeline stage"] = "📞 Contacted";
     updateFields["Lead status"]    = "Follow up";
   }
