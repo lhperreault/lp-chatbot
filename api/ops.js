@@ -1040,7 +1040,10 @@ async function handleLogOutreach(req, res) {
   if (!jobId || !/^rec[A-Za-z0-9]{14}$/.test(jobId)) {
     return res.status(400).json({ error: "invalid jobId" });
   }
-  const result = await logOutreach({ jobId, note });
+  // Kanban-card "Tried" button: log the attempt but DON'T touch the pipeline
+  // stage. Luke moves stages explicitly (a New lead trying to clarify info
+  // before a quote should stay in New lead, not jump to Contacted).
+  const result = await logOutreach({ jobId, note, bumpStage: false });
   if (result.error) return res.status(400).json(result);
   return res.status(200).json({ ok: true, ...result });
 }
@@ -1473,7 +1476,7 @@ async function updateClientTool({ clientId, fields }) {
   return { clientId: data.id, fieldsWritten: out };
 }
 
-async function logOutreach({ jobId, note }) {
+async function logOutreach({ jobId, note, bumpStage = true }) {
   if (!jobId) return { error: "jobId required" };
   const r = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { headers: airtableHeaders() });
   const data = await r.json();
@@ -1489,7 +1492,15 @@ async function logOutreach({ jobId, note }) {
     "Last touch":        todayISO(),
     "Notes from Luke":   newNotes,
   };
-  if (!stage || ["🆕 New lead", "💬 Quoted", "📞 Contacted"].includes(stage)) {
+  // Only auto-bump stage when explicitly requested (legacy chat-agent path).
+  // Luke's mental model for the stages:
+  //   🆕 New lead  = haven't done anything yet, or gathering info pre-quote
+  //   💬 Quoted    = sent them a quote
+  //   📞 Contacted = following up AFTER the quote
+  // So "Tried" outreach on a New lead does NOT mean Contacted — Luke might
+  // just be calling to clarify before quoting. Stage stays put unless the
+  // caller asks for it to move.
+  if (bumpStage && (!stage || ["🆕 New lead", "💬 Quoted", "📞 Contacted"].includes(stage))) {
     updateFields["Pipeline stage"] = "📞 Contacted";
     updateFields["Lead status"]    = "Follow up";
   }
