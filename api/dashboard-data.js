@@ -566,11 +566,26 @@ export default async function handler(req, res) {
     const formSubsCurr  = submitSessions.size;
     const quoteSentCurr = sBy.quote.size;
 
-    // Landing page leads = all clients in window with phone (inclusive of
-    // submitted). Pipeline uses Job linkage to track which of those leads
-    // got Quoted / Booked.
-    const landingLeads = filteredRecentClients; // already channel-filtered, has phone
-    const landingLeadsCount = landingLeads.length;
+    // Landing page leads = unique CLIENTS that had a Form submitted OR
+    // Partial captured event in the window. This counts both brand-new
+    // visitors AND returning customers who came back through the form —
+    // matching Luke's mental model of "how many actual landing-page lead
+    // interactions did I get this period." The previous client-creation
+    // -date approach undercounted returning visitors (their Client record
+    // was created in a prior window so they didn't show up).
+    //
+    // funnelRows is already channel-filtered above, so this naturally
+    // respects the dashboard's channel dropdown.
+    const landingClientIds = new Set();
+    for (const r of funnelRows) {
+      const t = r.fields["Timestamp"];
+      if (!t || Date.parse(t) < currMs) continue;
+      const ev = r.fields["Event type"];
+      if (ev !== "Form submitted" && ev !== "Partial captured") continue;
+      const clients = r.fields["Client"] || [];
+      if (clients.length) landingClientIds.add(clients[0]);
+    }
+    const landingLeadsCount = landingClientIds.size;
 
     // Build clientId → jobs index from the (unfiltered) full Jobs set so
     // we can resolve a landing-page client to its actual job outcomes.
@@ -581,11 +596,10 @@ export default async function handler(req, res) {
     }
     let landingQuotedCount = 0;
     let landingBookedCount = 0;
-    for (const c of landingLeads) {
-      const jobs = jobsByClient[c.id] || [];
+    for (const cid of landingClientIds) {
+      const jobs = jobsByClient[cid] || [];
       // A landing-page lead counts as Quoted/Booked if ANY of its jobs has
-      // a Quote/Booking date inside the window. Conservative — same date
-      // bounds as the BUSINESS KPIs at the top of the dashboard.
+      // a Quote/Booking date inside the window.
       if (jobs.some(j => inWindow(j.fields["Quote date"],   currMs))) landingQuotedCount++;
       if (jobs.some(j => inWindow(j.fields["Booking date"], currMs))) landingBookedCount++;
     }
