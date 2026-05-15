@@ -61,8 +61,14 @@ function clientMatchesChannel(c, ch) {
   if (!ch) return true;
   const cfg = CHANNEL_FILTERS[ch];
   if (!cfg) return true;
-  const utm = (c.fields["UTM source"] || "").toString().toLowerCase().trim();
+  const utm    = (c.fields["UTM source"] || "").toString().toLowerCase().trim();
+  const source = (c.fields["Source"]     || "").toString().trim();
+  // Match on EITHER the UTM source tag (raw from URL) or the canonical
+  // Source field (now derived/backfilled from fbclid+referrer too). This
+  // catches Meta-attributed clients that only had fbclid as the signal
+  // (no utm_source param) — they have Source="Meta ads" but UTM source="".
   if (cfg.utmSource.has(utm)) return true;
+  if (cfg.leadOrigin.has(source)) return true;
   return false;
 }
 
@@ -249,11 +255,21 @@ export default async function handler(req, res) {
     // Restrict to clients that actually came through the WordPress widget.
     // Angi-ingested leads, manually-created chat clients, etc. would
     // otherwise inflate the partial-form / landing-leads count and break
-    // funnel monotonicity (Partial > CTA clicks). The widget stamps
-    // Source="Website" on every Client it creates; other paths stamp
-    // their own label, so this filter pulls just the landing-page bucket.
+    // funnel monotonicity (Partial > CTA clicks).
+    //
+    // After the attribution backfill (dbacc13), Source is no longer always
+    // "Website" — widget visitors who arrived from a Meta ad now have
+    // Source="Meta ads", Yelp visitors have Source="Yelp", etc. So we
+    // accept any of the known widget-channel Source values. We deliberately
+    // exclude "Angi" because that one is ambiguous: it's set both by the
+    // widget (when a visitor lands via an Angi referral) and by the email
+    // ingest flow at /api/ops?action=ingest-lead. Excluding Angi means
+    // widget-from-Angi leads (rare) won't be counted, which is a tradeoff
+    // worth taking to keep email-ingested Angi leads out of the landing
+    // page funnel.
+    const WIDGET_SOURCES = new Set(["Website", "Meta ads", "Yelp", "Google", "Bing"]);
     const widgetSourceClients = (recentClients || []).filter(c =>
-      (c.fields["Source"] || "").toString().trim() === "Website"
+      WIDGET_SOURCES.has((c.fields["Source"] || "").toString().trim())
     );
     const filteredRecentClients = channel
       ? widgetSourceClients.filter(c => clientMatchesChannel(c, channel))
