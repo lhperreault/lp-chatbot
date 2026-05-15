@@ -640,11 +640,11 @@ async function handleEventOrigins(req, res) {
   const byCountry  = {};
   const bySource   = {};
   const byReferrer = {};
-  const byUtmMedium = {};
+  const sessionsBySource   = {};
+  const sessionsByReferrer = {};
   let internalTrue = 0;
   let countryBlank = 0;
   const sessions = new Set();
-  const latestSampleByCountry = {};
 
   for (const r of records) {
     const f = r.fields || {};
@@ -652,35 +652,43 @@ async function handleEventOrigins(req, res) {
     const cKey    = country || "(blank — pre-fix data)";
     const source  = f["UTM source"] || "(no UTM source)";
     const ref     = ((f["Referrer"] || "").replace(/^https?:\/\//, "").split(/[/?#]/)[0]) || "(no referrer)";
+    const sid     = f["Session ID"] || "";
 
     byCountry[cKey]   = (byCountry[cKey]   || 0) + 1;
     bySource[source]  = (bySource[source]  || 0) + 1;
     byReferrer[ref]   = (byReferrer[ref]   || 0) + 1;
     if (f["Internal"] === true) internalTrue++;
     if (!country) countryBlank++;
-    if (f["Session ID"]) sessions.add(f["Session ID"]);
-    if (country && !latestSampleByCountry[country]) {
-      latestSampleByCountry[country] = {
-        timestamp: f["Timestamp"], source, referrer: ref,
-        landingUrl: (f["Landing URL"] || "").slice(0, 120),
-      };
+    if (sid) sessions.add(sid);
+
+    if (sid) {
+      (sessionsBySource[source]   ||= new Set()).add(sid);
+      (sessionsByReferrer[ref]    ||= new Set()).add(sid);
     }
   }
 
-  const sortTop = (obj, n = 20) =>
+  const sortTopCounts = (obj, n = 20) =>
     Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ key: k, count: v }));
+
+  const sortTopSessions = (obj, hitsObj, n = 20) =>
+    Object.entries(obj)
+      .map(([k, s]) => ({ key: k, sessions: s.size, hits: hitsObj[k] || 0, hitsPerSession: +(((hitsObj[k] || 0) / s.size)).toFixed(2) }))
+      .sort((a, b) => b.sessions - a.sessions)
+      .slice(0, n);
 
   return res.status(200).json({
     days,
     eventType: evType,
     total: records.length,
     uniqueSessions: sessions.size,
+    avgHitsPerSession: +((records.length / Math.max(1, sessions.size)).toFixed(2)),
     internalFlagged: internalTrue,
     countryBlank,
-    byCountry:  sortTop(byCountry),
-    bySource:   sortTop(bySource),
-    byReferrer: sortTop(byReferrer, 25),
-    latestPerCountry: latestSampleByCountry,
+    byCountry:  sortTopCounts(byCountry),
+    bySource:   sortTopCounts(bySource),
+    byReferrer: sortTopCounts(byReferrer, 25),
+    sessionsBySource:   sortTopSessions(sessionsBySource,   bySource),
+    sessionsByReferrer: sortTopSessions(sessionsByReferrer, byReferrer, 25),
   });
 }
 
