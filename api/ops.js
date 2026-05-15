@@ -77,6 +77,7 @@ const STAGE_TO_LEAD_STATUS = {
   "📅 Booked":    "Booked",
   "✅ Job done":  "Completed",
   "❌ Lost":      "Lost",
+  "🚫 Fake":      "Lost",
 };
 
 const todayISO = () => new Date().toISOString().split("T")[0];
@@ -92,6 +93,7 @@ const KANBAN_STAGES = [
   "📅 Booked",
   "✅ Job done",
   "❌ Lost",
+  "🚫 Fake",
 ];
 
 const VIEW_CONFIGS = {

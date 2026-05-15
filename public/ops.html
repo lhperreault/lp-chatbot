@@ -286,6 +286,7 @@
   .pill.stage-booked    { background: rgba(0,135,107,0.16);  color: #0d6b53; }
   .pill.stage-done      { background: rgba(0,107,73,0.18);   color: #0a4f3a; }
   .pill.stage-lost      { background: rgba(212,76,71,0.16);  color: #a82a25; }
+  .pill.stage-fake      { background: rgba(120,120,120,0.18); color: #555555; }
   .pill.stage-other     { background: var(--bg-soft);        color: var(--text-2); }
   .pill.outreach        { background: rgba(217,109,6,0.18);  color: #a15009; }
   .pill.responded       { background: rgba(0,135,107,0.16);  color: #0d6b53; }
@@ -960,6 +961,7 @@
     "📅 Booked",
     "✅ Job done",
     "❌ Lost",
+    "🚫 Fake",
   ];
   const LEAD_STATUSES = ["", "Quoted", "Booked", "Completed", "Lost", "Follow up", "Cold"];
 
@@ -971,6 +973,7 @@
       "📅 Booked":    "stage-booked",
       "✅ Job done":  "stage-done",
       "❌ Lost":      "stage-lost",
+      "🚫 Fake":      "stage-fake",
     })[stage] || "stage-other";
   }
   function fmtMoney(n) {
@@ -1258,9 +1261,9 @@
   const TRIED_STAGES = new Set(["🆕 New lead", "💬 Quoted", "📞 Contacted"]);
 
   // Stages where Luke wants the Notes-from-Luke text inline on the card.
-  // Contacted: see outreach history at a glance. Lost: see the reason
-  // (he writes the loss reason there).
-  const NOTES_INLINE_STAGES = new Set(["📞 Contacted", "❌ Lost"]);
+  // Contacted: see outreach history at a glance. Lost: see the loss reason.
+  // Fake: see why it was marked fake (e.g. bot-filled form, dead number).
+  const NOTES_INLINE_STAGES = new Set(["📞 Contacted", "❌ Lost", "🚫 Fake"]);
 
   // Return the most useful chunk of a notes blob for inline display —
   // the last ~3 lines, trimmed, joined back with newlines so the CSS
@@ -1372,7 +1375,7 @@
       const preview = notesPreview(j.notesFromLuke);
       if (preview) {
         notesBlock = `<div class="card-notes">${escapeHtml(preview)}</div>`;
-      } else if (stage === "❌ Lost") {
+      } else if (stage === "❌ Lost" || stage === "🚫 Fake") {
         notesBlock = `<div class="card-notes"><em>No reason logged. Tap card to add one.</em></div>`;
       }
     }
