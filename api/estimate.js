@@ -35,10 +35,48 @@ const AT_CLIENTS       = "Clients";
 const AT_JOBS          = "Jobs";
 const AT_CONVERSATIONS = "Conversations";
 const AT_FUNNEL        = "Funnel events";
-// Match chat.js so Airtable single-select options don't reject writes.
-const SOURCE_CLIENTS   = "Website";          // Clients.Source
-const LEAD_ORIGIN      = "Website";          // Jobs."Lead origin" — where the lead came from
-const CONVO_CHANNEL    = "Website chatbot";  // Conversations.Channel — medium of communication
+// Default fallback when no attribution signal is available. Real Lead
+// origin / Client Source is derived per-request from utm_source / fbclid /
+// gclid / referrer — see deriveOriginFromAttribution() below.
+const SOURCE_CLIENTS_DEFAULT = "Website";
+const LEAD_ORIGIN_DEFAULT    = "Website";
+const CONVO_CHANNEL          = "Website chatbot";  // Conversations.Channel — medium of communication
+
+// Map raw attribution → the canonical Lead origin / Source value Luke
+// uses in Airtable. Must match the strings in the "Lead origin" /
+// "Source" single-select fields (and the dashboard's CHANNEL_FILTERS
+// map). Anything we can't classify confidently falls back to "Website".
+function deriveOriginFromAttribution(attr) {
+  if (!attr) return LEAD_ORIGIN_DEFAULT;
+  const utm = (attr.utm_source || "").toString().toLowerCase().trim();
+  const ref = (attr.referrer   || "").toString().toLowerCase();
+
+  // Meta — UTM tag, fbclid (Meta ad click ID), or FB/IG referrer
+  if (utm === "meta" || utm === "facebook" || utm === "instagram") return "Meta ads";
+  if (attr.fbclid) return "Meta ads";
+  if (/(facebook|fb\.com|instagram)/.test(ref)) return "Meta ads";
+
+  // Google — UTM tag, gclid (Google Ads click ID), or google referrer
+  // Note: organic google searches will also match the referrer test. That's
+  // intentional — for our purposes "Google" buckets both ads and organic
+  // search until Luke runs Google ads with a utm_source=google convention.
+  if (utm === "google") return "Google";
+  if (attr.gclid) return "Google";
+  if (/^https?:\/\/(www\.)?google\./.test(ref) || /google\.com/.test(ref)) return "Google";
+
+  // Yelp
+  if (utm === "yelp") return "Yelp";
+  if (/yelp\.com/.test(ref)) return "Yelp";
+
+  // Angi
+  if (utm === "angi") return "Angi";
+  if (/(angi|homeadvisor)\.com/.test(ref)) return "Angi";
+
+  // Bing — only if explicit; falls through to Website otherwise
+  if (attr.msclkid) return "Bing";
+
+  return LEAD_ORIGIN_DEFAULT; // organic / direct / unknown UTM
+}
 
 function airtableUrl(table) {
   return `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
@@ -73,7 +111,11 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
     if (args.phone)     fields["Phone"]     = args.phone;
     if (args.email)     fields["Email"]     = args.email;
     if (args.address)   fields["Address"]   = args.address;
-    fields["Source"] = SOURCE_CLIENTS;
+    // NOTE: do NOT default Source here. We only stamp Source if the client
+    // is brand-new (set below in the CREATE branch) — for existing clients
+    // we preserve their first-touch attribution. Otherwise a returning
+    // customer who originally came via Yelp would have their Source
+    // silently overwritten to "Website" on every subsequent visit.
 
     if (existingId) {
       // Check existing record to avoid clobbering first-touch attribution
@@ -106,6 +148,11 @@ async function upsertClient(args, knownClientId = null, attribution = null) {
 
     // New client — stamp attribution + any property details we have.
     fields["First contacted"] = new Date().toISOString().split("T")[0];
+    // Source = derived channel ("Meta ads", "Yelp", "Google", etc.) so the
+    // dashboard's channel filter and revenue attribution work correctly.
+    // We only set this on CREATE — existing clients keep their first-touch
+    // Source (handled in the UPDATE branch by virtue of NOT setting it).
+    fields["Source"] = deriveOriginFromAttribution(attribution);
     if (attribution) {
       if (attribution.utm_source)   fields["UTM source"]   = attribution.utm_source;
       if (attribution.utm_campaign) fields["UTM campaign"] = attribution.utm_campaign;
@@ -182,7 +229,10 @@ async function createJob(clientId, args, conversationLog, customerName, opts = {
       "Quote date":        new Date().toISOString().split("T")[0],
       "Create date":       new Date().toISOString().split("T")[0],
       "Pipeline stage":    stage,
-      "Lead origin":       LEAD_ORIGIN,
+      // Lead origin reflects the marketing channel that brought THIS job in.
+      // Derived from the per-request attribution (utm/fbclid/gclid/referrer).
+      // Falls back to "Website" only when no attribution signal exists.
+      "Lead origin":       opts.leadOrigin || deriveOriginFromAttribution(opts.attribution),
     };
     if (leadStatus) fields["Lead status"] = leadStatus;
     if (typeof args.quoteAmount === "number") fields["Quote amount"]     = args.quoteAmount;
@@ -1087,7 +1137,7 @@ async function runTool(name, args, state, formData, originalMessages) {
         r = await updateJob(state.jobId, updateFields);
         if (r.jobId) state.jobIsStub = false; // stub consumed; next save_quote_job creates a new Job
       } else {
-        r = await createJob(state.clientId, args, convoLog, formData.firstName);
+        r = await createJob(state.clientId, args, convoLog, formData.firstName, { attribution: state.attribution });
         if (r.jobId) state.jobId = r.jobId;
       }
       if (r.jobId) {
@@ -1298,7 +1348,7 @@ export default async function handler(req, res) {
           { serviceType: services, propertySnapshot: formData.address || "", quote: "Pending — bot quoting in progress", quoteAmount: 0 },
           null,
           formData.firstName,
-          { stage: "🆕 New lead", leadStatus: null }
+          { stage: "🆕 New lead", leadStatus: null, attribution }
         );
         if (stub?.jobId) {
           state.jobId      = stub.jobId;

@@ -33,8 +33,29 @@ function setCors(req, res) {
 const AT_CLIENTS       = "Clients";
 const AT_JOBS          = "Jobs";
 const AT_CONVERSATIONS = "Conversations";
-const LEAD_ORIGIN      = "Website";          // Jobs."Lead origin" — origin attribution
-const CONVO_CHANNEL    = "Website chatbot";  // Conversations.Channel — medium
+const LEAD_ORIGIN_DEFAULT = "Website";       // Jobs."Lead origin" fallback when no signal
+const CONVO_CHANNEL       = "Website chatbot"; // Conversations.Channel — medium
+
+// Mirror of estimate.js's deriveOriginFromAttribution. Keep in sync if
+// you add a new channel — these two functions must agree on the
+// canonical Source / Lead origin string.
+function deriveOriginFromAttribution(attr) {
+  if (!attr) return LEAD_ORIGIN_DEFAULT;
+  const utm = (attr.utm_source || "").toString().toLowerCase().trim();
+  const ref = (attr.referrer   || "").toString().toLowerCase();
+  if (utm === "meta" || utm === "facebook" || utm === "instagram") return "Meta ads";
+  if (attr.fbclid) return "Meta ads";
+  if (/(facebook|fb\.com|instagram)/.test(ref)) return "Meta ads";
+  if (utm === "google") return "Google";
+  if (attr.gclid) return "Google";
+  if (/^https?:\/\/(www\.)?google\./.test(ref) || /google\.com/.test(ref)) return "Google";
+  if (utm === "yelp") return "Yelp";
+  if (/yelp\.com/.test(ref)) return "Yelp";
+  if (utm === "angi") return "Angi";
+  if (/(angi|homeadvisor)\.com/.test(ref)) return "Angi";
+  if (attr.msclkid) return "Bing";
+  return LEAD_ORIGIN_DEFAULT;
+}
 
 // ─── Full LP Pressure Washing System Prompt ─────────────────────────────────
 const SYSTEM_PROMPT = `Hey there! Welcome to LP Pressure Washing!
@@ -531,9 +552,27 @@ async function upsertClient(args, knownClientId = null) {
 }
 
 // Create a Job row. Returns { jobId } or { error }.
-async function createJob(clientId, args, conversationLog) {
+async function createJob(clientId, args, conversationLog, attribution = null) {
   try {
     if (!clientId) return { error: "clientId is required to create a Job" };
+
+    // If we weren't passed attribution explicitly (older callers), fall back
+    // to whatever the Client's first-touch UTM source / referrer is — that's
+    // the right channel attribution for a job created mid-chatbot session.
+    let derivedAttr = attribution;
+    if (!derivedAttr) {
+      try {
+        const cRes = await fetch(`${airtableUrl(AT_CLIENTS)}/${clientId}`, { headers: airtableHeaders() });
+        const cData = await cRes.json();
+        if (cData && cData.fields) {
+          derivedAttr = {
+            utm_source: cData.fields["UTM source"] || "",
+            referrer:   cData.fields["Referrer"]   || "",
+            fbclid:     cData.fields["Meta fbclid"] || "",
+          };
+        }
+      } catch {}
+    }
 
     const fields = {
       "Client":           [clientId],
@@ -544,7 +583,7 @@ async function createJob(clientId, args, conversationLog) {
       "Create date":      new Date().toISOString().split("T")[0],
       "Pipeline stage":   "💬 Quoted",
       "Lead status":      "Quoted",
-      "Lead origin":      LEAD_ORIGIN,
+      "Lead origin":      deriveOriginFromAttribution(derivedAttr),
     };
     if (typeof args.quoteAmount === "number") fields["Quote amount"] = args.quoteAmount;
     if (args.reasoning) fields["Reasoning"] = args.reasoning;

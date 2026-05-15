@@ -902,6 +902,128 @@ async function handleTelegramAudit(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: backfill-attribution — fix the historic "everything is Website"
+// bug. Reads each Client's UTM source / Referrer / fbclid and rewrites
+// Client.Source to the correct channel. Then propagates the new Source to
+// every linked Job's "Lead origin" so the dashboard's channel filter works
+// for past data too.
+//
+//   POST /api/ops?action=backfill-attribution&dryRun=1   → preview counts
+//   POST /api/ops?action=backfill-attribution            → execute
+//
+// Skips records where Source / Lead origin is already non-Website (so
+// manually-corrected records and Angi-ingested rows stay untouched).
+// ═══════════════════════════════════════════════════════════════════════
+
+// Mirror of estimate.js / chat.js — keep in sync.
+function deriveOriginFromAttribution(attr) {
+  if (!attr) return "Website";
+  const utm = (attr.utm_source || "").toString().toLowerCase().trim();
+  const ref = (attr.referrer   || "").toString().toLowerCase();
+  if (utm === "meta" || utm === "facebook" || utm === "instagram") return "Meta ads";
+  if (attr.fbclid) return "Meta ads";
+  if (/(facebook|fb\.com|instagram)/.test(ref)) return "Meta ads";
+  if (utm === "google") return "Google";
+  if (attr.gclid) return "Google";
+  if (/^https?:\/\/(www\.)?google\./.test(ref) || /google\.com/.test(ref)) return "Google";
+  if (utm === "yelp") return "Yelp";
+  if (/yelp\.com/.test(ref)) return "Yelp";
+  if (utm === "angi") return "Angi";
+  if (/(angi|homeadvisor)\.com/.test(ref)) return "Angi";
+  if (attr.msclkid) return "Bing";
+  return "Website";
+}
+
+async function handleBackfillAttribution(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const dryRun = req.query?.dryRun === "true" || req.query?.dryRun === "1";
+
+  // Pull every Client with attribution data (UTM source / Referrer / fbclid)
+  // AND Source = "Website" (the wrong default).
+  const clients = await airtableGet(AT_CLIENTS, {
+    filterByFormula: `AND({Source}='Website', OR(NOT({UTM source}=BLANK()), NOT({Referrer}=BLANK()), NOT({Meta fbclid}=BLANK())))`,
+    "fields[]": ["Name", "Full name", "Source", "UTM source", "Referrer", "Meta fbclid", "Jobs"],
+  });
+
+  const clientPatches = [];
+  const jobIdsToUpdate = new Map(); // jobId -> newOrigin
+  const stats = { meta: 0, yelp: 0, google: 0, angi: 0, bing: 0, website: 0 };
+
+  for (const c of clients) {
+    const derived = deriveOriginFromAttribution({
+      utm_source: c.fields["UTM source"] || "",
+      referrer:   c.fields["Referrer"]   || "",
+      fbclid:     c.fields["Meta fbclid"] || "",
+    });
+    if (derived === "Website") continue; // nothing to change
+    clientPatches.push({ id: c.id, derived });
+    stats[derived.toLowerCase().split(" ")[0]] = (stats[derived.toLowerCase().split(" ")[0]] || 0) + 1;
+    // Propagate to all of this client's Jobs
+    const jobs = c.fields["Jobs"] || [];
+    for (const jid of jobs) jobIdsToUpdate.set(jid, derived);
+  }
+
+  if (dryRun) {
+    return res.status(200).json({
+      ok: true,
+      dryRun: true,
+      clientsToUpdate: clientPatches.length,
+      jobsToUpdate:    jobIdsToUpdate.size,
+      bucket:          stats,
+      sample:          clientPatches.slice(0, 20).map(p => ({
+        clientId: p.id,
+        newSource: p.derived,
+      })),
+    });
+  }
+
+  // Patch Clients in batches of 10 (Airtable cap)
+  let clientsUpdated = 0;
+  const errors = [];
+  for (let i = 0; i < clientPatches.length; i += 10) {
+    const chunk = clientPatches.slice(i, i + 10);
+    const r = await fetch(airtableUrl(AT_CLIENTS), {
+      method: "PATCH",
+      headers: airtableHeaders(),
+      body: JSON.stringify({
+        records: chunk.map(p => ({ id: p.id, fields: { "Source": p.derived } })),
+        typecast: true,
+      }),
+    });
+    const data = await r.json();
+    if (data.error) errors.push({ section: "clients", chunk: i, error: data.error.message });
+    else clientsUpdated += chunk.length;
+  }
+
+  // Patch Jobs in batches of 10
+  const jobsArr = [...jobIdsToUpdate.entries()];
+  let jobsUpdated = 0;
+  for (let i = 0; i < jobsArr.length; i += 10) {
+    const chunk = jobsArr.slice(i, i + 10);
+    const r = await fetch(airtableUrl(AT_JOBS), {
+      method: "PATCH",
+      headers: airtableHeaders(),
+      body: JSON.stringify({
+        records: chunk.map(([jid, origin]) => ({ id: jid, fields: { "Lead origin": origin } })),
+        typecast: true,
+      }),
+    });
+    const data = await r.json();
+    if (data.error) errors.push({ section: "jobs", chunk: i, error: data.error.message });
+    else jobsUpdated += chunk.length;
+  }
+
+  return res.status(200).json({
+    ok: errors.length === 0,
+    clientsUpdated,
+    jobsUpdated,
+    bucket: stats,
+    errorsCount: errors.length,
+    errors,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1860,6 +1982,7 @@ export default async function handler(req, res) {
       case "sessions-list":           return await handleSessionsList(req, res);
       case "delete-sessions":         return await handleDeleteSessions(req, res);
       case "telegram-audit":          return await handleTelegramAudit(req, res);
+      case "backfill-attribution":    return await handleBackfillAttribution(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);
