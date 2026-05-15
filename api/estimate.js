@@ -1146,12 +1146,14 @@ export default async function handler(req, res) {
         if (r?.clientId) partialClientId = r.clientId;
         wasNew = !!r?.isNew;
       }
-      // Only ping on first capture for this phone — so repeated blurs don't
-      // spam Telegram if they fix a typo.
-      if (wasNew) {
-        notifyPartialLead(formData, attribution).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
-      }
-      return res.status(200).json({ ok: true, partial: true, clientId: partialClientId });
+      // Fire Telegram on EVERY partial capture, not just new clients.
+      // The widget's frontend `partialSent` flag already dedups within a
+      // single session, so this won't spam if someone fixes a typo. But
+      // when the same person visits in a new session/tab and re-enters
+      // their phone, Luke wants the ping — that's a fresh signal of intent,
+      // even if it's a repeat customer.
+      notifyPartialLead(formData, attribution).catch(err => console.error("[notifyPartialLead] fire-and-forget error:", err));
+      return res.status(200).json({ ok: true, partial: true, clientId: partialClientId, isNew: wasNew });
     } catch (err) {
       console.error("[estimate] partial branch error:", err);
       return res.status(200).json({ ok: false, partial: true });

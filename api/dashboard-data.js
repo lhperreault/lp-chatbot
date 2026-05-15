@@ -246,9 +246,18 @@ export default async function handler(req, res) {
     const filteredColdJobs = channel
       ? coldJobs.filter(j => jobMatchesChannel(j, channel))
       : coldJobs;
+    // Restrict to clients that actually came through the WordPress widget.
+    // Angi-ingested leads, manually-created chat clients, etc. would
+    // otherwise inflate the partial-form / landing-leads count and break
+    // funnel monotonicity (Partial > CTA clicks). The widget stamps
+    // Source="Website" on every Client it creates; other paths stamp
+    // their own label, so this filter pulls just the landing-page bucket.
+    const widgetSourceClients = (recentClients || []).filter(c =>
+      (c.fields["Source"] || "").toString().trim() === "Website"
+    );
     const filteredRecentClients = channel
-      ? (recentClients || []).filter(c => clientMatchesChannel(c, channel))
-      : (recentClients || []);
+      ? widgetSourceClients.filter(c => clientMatchesChannel(c, channel))
+      : widgetSourceClients;
 
     // ── Funnel events: bucket by curr/prev for top-of-funnel + outreach ─────
     const eventCounts = { curr: {}, prev: {} };
