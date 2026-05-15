@@ -551,6 +551,73 @@ async function handleBackfillToDone(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: setup-tracking-fields — one-shot: ensure the "Funnel events"
+// table has Country (singleLineText) and Internal (checkbox) fields so
+// the dashboard can filter out Luke's test traffic.
+//
+//   POST /api/ops?action=setup-tracking-fields
+//
+// Idempotent — checks existing fields first and only creates what's
+// missing. Requires the PAT to have schema.bases:write scope.
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleSetupTrackingFields(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  // 1. Find the Funnel events table ID via the Meta API
+  const tablesRes = await fetch(`https://api.airtable.com/v0/meta/bases/${AT_BASE}/tables`, {
+    headers: { Authorization: `Bearer ${AT_KEY}` },
+  });
+  const tablesData = await tablesRes.json();
+  if (tablesData.error) {
+    return res.status(400).json({ error: `Meta API: ${tablesData.error.message || tablesData.error.type}` });
+  }
+  const funnel = (tablesData.tables || []).find(t => t.name === AT_FUNNEL);
+  if (!funnel) return res.status(404).json({ error: `Table "${AT_FUNNEL}" not found in base` });
+
+  const existing = new Set((funnel.fields || []).map(f => f.name));
+  const created = [];
+  const skipped = [];
+  const errors = [];
+
+  // 2. Create Country (singleLineText) if missing
+  if (existing.has("Country")) {
+    skipped.push("Country");
+  } else {
+    const r = await fetch(`https://api.airtable.com/v0/meta/bases/${AT_BASE}/tables/${funnel.id}/fields`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AT_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Country", type: "singleLineText", description: "ISO-2 country code from Vercel x-vercel-ip-country (e.g. US, ES, GB). Used to filter out internal/test traffic from dashboard KPIs." }),
+    });
+    const d = await r.json();
+    if (d.error) errors.push({ field: "Country", error: d.error.message || d.error.type });
+    else created.push("Country");
+  }
+
+  // 3. Create Internal (checkbox) if missing
+  if (existing.has("Internal")) {
+    skipped.push("Internal");
+  } else {
+    const r = await fetch(`https://api.airtable.com/v0/meta/bases/${AT_BASE}/tables/${funnel.id}/fields`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AT_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Internal", type: "checkbox", options: { color: "redBright", icon: "check" }, description: "Set when the visitor's device opted out via the dashboard 'Mark internal' button. Filtered out of KPIs by default." }),
+    });
+    const d = await r.json();
+    if (d.error) errors.push({ field: "Internal", error: d.error.message || d.error.type });
+    else created.push("Internal");
+  }
+
+  return res.status(200).json({
+    ok: errors.length === 0,
+    tableId: funnel.id,
+    created,
+    skipped,
+    errors,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1503,7 +1570,8 @@ export default async function handler(req, res) {
       case "update-client":  return await handleUpdateClient(req, res);
       case "search-clients": return await handleSearchClients(req, res);
       case "create-job":     return await handleCreateJob(req, res);
-      case "backfill-2025-to-done": return await handleBackfillToDone(req, res);
+      case "backfill-2025-to-done":   return await handleBackfillToDone(req, res);
+      case "setup-tracking-fields":   return await handleSetupTrackingFields(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);

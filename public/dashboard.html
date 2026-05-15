@@ -119,6 +119,34 @@
     color: #8b949e; font-size: 11px; padding-bottom: 8px;
   }
   #last-updated { color: #6e7681; font-size: 11px; margin-top: 12px; text-align: right; }
+
+  /* Internal-traffic controls in the header */
+  .internal-controls {
+    display: flex; gap: 6px; align-items: center;
+    font-size: 11px; color: #8b949e;
+  }
+  .internal-controls .toggle-btn,
+  .internal-controls .mark-btn {
+    background: #161b22; color: #8b949e;
+    border: 1px solid #21262d; border-radius: 6px;
+    padding: 5px 9px; font-size: 11px; font-family: inherit;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .internal-controls .toggle-btn:hover,
+  .internal-controls .mark-btn:hover { background: #1c2330; color: #c9d1d9; }
+  .internal-controls .toggle-btn.on  { background: #1f3a52; color: #79c0ff; border-color: #2f81f7; }
+  .internal-controls .mark-btn.on    { background: #3a1d1d; color: #ffa198; border-color: #5a2a2a; }
+  .internal-banner {
+    background: #1f3a52; color: #79c0ff;
+    border: 1px solid #2f81f7; border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 14px;
+    font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px;
+  }
+  .pill.country  { background: #2d2a1a; color: #e3b341; }
+  .pill.internal { background: #3a1d1d; color: #ffa198; }
   .error-banner {
     background: #3a1d1d; color: #ffa198; padding: 12px 16px;
     border-radius: 8px; margin-bottom: 16px; font-size: 13px;
@@ -133,7 +161,11 @@
     <h1>LP Marketing Dashboard</h1>
     <div class="subtitle">Live from Airtable · auto-refreshes every 5 min</div>
   </div>
-  <div style="display:flex; gap:12px; align-items:center;">
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+    <div class="internal-controls">
+      <button class="mark-btn" id="mark-internal-btn" title="Tag this browser as internal so its tracking events are filtered out of the dashboard">Mark this device internal</button>
+      <button class="toggle-btn" id="toggle-internal-btn" title="Show events filtered out by country/internal rules">Show internal</button>
+    </div>
     <a id="ops-link" href="ops.html" style="color:#79c0ff; font-size:12px; text-decoration:none; padding:6px 10px; border:1px solid #21262d; border-radius:6px;">Kanban →</a>
     <div class="range-toggle" id="range-toggle">
       <button data-days="7" class="active">7d</button>
@@ -156,6 +188,7 @@
 
 <main>
   <div id="error" style="display:none" class="error-banner"></div>
+  <div id="internal-banner" class="internal-banner" style="display:none"></div>
 
   <div class="section-label">Business</div>
   <div class="kpi-grid" id="kpi-business"></div>
@@ -210,6 +243,9 @@
           </select>
           <select id="recent-filter-source" title="Filter by source">
             <option value="">All sources</option>
+          </select>
+          <select id="recent-filter-country" title="Filter by visitor country">
+            <option value="">All countries</option>
           </select>
         </div>
       </div>
@@ -272,6 +308,65 @@
     setActiveRange(currentDays);
     load();
   });
+
+  // ── Internal-traffic controls ──────────────────────────────────────────
+  // "Mark this device internal" persists in localStorage. The tracker
+  // script reads the same flag and tags outbound events accordingly so
+  // anything Luke touches from a flagged browser stops counting.
+  //
+  // "Show internal" is dashboard-only: it tells dashboard-data to return
+  // all events including filtered ones. Stored per-session so reloads
+  // don't surprise him with hidden numbers.
+  let showInternal = sessionStorage.getItem("lp_show_internal") === "1";
+  const markBtn   = document.getElementById("mark-internal-btn");
+  const toggleBtn = document.getElementById("toggle-internal-btn");
+
+  function refreshMarkBtn() {
+    const isMarked = localStorage.getItem("lp_internal") === "1";
+    markBtn.classList.toggle("on", isMarked);
+    markBtn.textContent = isMarked ? "✓ This device is internal" : "Mark this device internal";
+  }
+  function refreshToggleBtn() {
+    toggleBtn.classList.toggle("on", showInternal);
+    toggleBtn.textContent = showInternal ? "Hide internal" : "Show internal";
+  }
+  refreshMarkBtn();
+  refreshToggleBtn();
+
+  markBtn.addEventListener("click", () => {
+    const isMarked = localStorage.getItem("lp_internal") === "1";
+    if (isMarked) {
+      if (!confirm("This device is currently flagged as internal — its tracking events aren't being counted. Unflag it?")) return;
+      localStorage.removeItem("lp_internal");
+    } else {
+      localStorage.setItem("lp_internal", "1");
+    }
+    refreshMarkBtn();
+  });
+
+  toggleBtn.addEventListener("click", () => {
+    showInternal = !showInternal;
+    if (showInternal) sessionStorage.setItem("lp_show_internal", "1");
+    else              sessionStorage.removeItem("lp_show_internal");
+    refreshToggleBtn();
+    load();
+  });
+
+  function renderInternalBanner(data) {
+    const el = document.getElementById("internal-banner");
+    if (showInternal) {
+      el.style.display = "flex";
+      el.innerHTML = `<span>👀 Showing internal/non-US traffic — KPIs include test data.</span>`;
+      return;
+    }
+    const n = data?.filteredOutCount || 0;
+    if (n > 0) {
+      el.style.display = "flex";
+      el.innerHTML = `<span>${n} internal/non-US event${n === 1 ? "" : "s"} hidden from this view. Tap "Show internal" in the header to see them.</span>`;
+    } else {
+      el.style.display = "none";
+    }
+  }
 
   function renderKPISet(elId, defs, kpis) {
     const grid = document.getElementById(elId);
@@ -491,21 +586,27 @@
   function populateRecentFilterOptions(rows) {
     const evSel  = document.getElementById("recent-filter-event");
     const srcSel = document.getElementById("recent-filter-source");
+    const cySel  = document.getElementById("recent-filter-country");
 
     const eventTypes = [...new Set(rows.map(r => r.eventType).filter(Boolean))].sort();
     const sources    = [...new Set(rows.map(r => r.source).filter(Boolean))].sort();
+    const countries  = [...new Set(rows.map(r => r.country).filter(Boolean))].sort();
 
     // Preserve any current selection across re-renders
     const evPrev  = evSel.value;
     const srcPrev = srcSel.value;
+    const cyPrev  = cySel.value;
 
     evSel.innerHTML = `<option value="">All events</option>` +
       eventTypes.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
     srcSel.innerHTML = `<option value="">All sources</option>` +
       sources.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+    cySel.innerHTML = `<option value="">All countries</option>` +
+      countries.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
 
     if (eventTypes.includes(evPrev))  evSel.value  = evPrev;
     if (sources.includes(srcPrev))    srcSel.value = srcPrev;
+    if (countries.includes(cyPrev))   cySel.value  = cyPrev;
   }
 
   function renderRecentFiltered() {
@@ -513,19 +614,23 @@
     const countEl = document.getElementById("recent-filter-count");
     const evSel  = document.getElementById("recent-filter-event");
     const srcSel = document.getElementById("recent-filter-source");
+    const cySel  = document.getElementById("recent-filter-country");
     const evFilter  = evSel.value;
     const srcFilter = srcSel.value;
+    const cyFilter  = cySel.value;
 
     evSel.classList.toggle("has-value", !!evFilter);
     srcSel.classList.toggle("has-value", !!srcFilter);
+    cySel.classList.toggle("has-value", !!cyFilter);
 
     const filtered = recentRowsCache.filter(r => {
       if (evFilter  && r.eventType !== evFilter)  return false;
       if (srcFilter && r.source    !== srcFilter) return false;
+      if (cyFilter  && r.country   !== cyFilter)  return false;
       return true;
     });
 
-    if (evFilter || srcFilter) {
+    if (evFilter || srcFilter || cyFilter) {
       countEl.style.display = "block";
       countEl.textContent = `${filtered.length} of ${recentRowsCache.length} shown`;
     } else {
@@ -540,6 +645,8 @@
       <div class="list-item">
         <div>
           <span class="pill event">${escapeHtml(r.eventType)}</span>
+          ${r.country && r.country !== "US" ? `<span class="pill country" style="margin-left:6px">${escapeHtml(r.country)}</span>` : ""}
+          ${r.internal ? `<span class="pill internal" style="margin-left:6px">internal</span>` : ""}
           ${r.source ? `<span class="meta" style="margin-left:8px">via ${escapeHtml(r.source)}</span>` : ""}
           ${r.notes ? `<div class="meta">${escapeHtml(r.notes.slice(0, 120))}${r.notes.length > 120 ? "…" : ""}</div>` : ""}
         </div>
@@ -550,6 +657,7 @@
 
   document.getElementById("recent-filter-event").addEventListener("change", renderRecentFiltered);
   document.getElementById("recent-filter-source").addEventListener("change", renderRecentFiltered);
+  document.getElementById("recent-filter-country").addEventListener("change", renderRecentFiltered);
 
   async function load() {
     const errEl = document.getElementById("error");
@@ -557,6 +665,7 @@
     try {
       const params = new URLSearchParams({ days: String(currentDays) });
       if (apiKey) params.set("key", apiKey);
+      if (showInternal) params.set("includeInternal", "1");
       const url = `${apiBase}/api/dashboard-data?${params.toString()}`;
       const r = await fetch(url);
       if (!r.ok) {
@@ -564,6 +673,7 @@
         throw new Error(body.error || `HTTP ${r.status}`);
       }
       const data = await r.json();
+      renderInternalBanner(data);
       renderKPISet("kpi-business",  BUSINESS_KPIS,  data.kpis);
       renderKPISet("kpi-secondary", SECONDARY_KPIS, data.kpis);
       renderChannelMix(data.channelMix);

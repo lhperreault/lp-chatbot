@@ -101,11 +101,18 @@
     if (fired[dedupKey]) return;
     fired[dedupKey] = true;
 
+    // Internal opt-out: set localStorage.lp_internal="1" on Luke's devices
+    // (via the dashboard's "Mark internal" button) and every event from
+    // that browser is flagged so the dashboard can filter it out.
+    var isInternal = false;
+    try { isInternal = window.localStorage && localStorage.getItem('lp_internal') === '1'; } catch (e) {}
+
     var body = JSON.stringify({
       event_type: eventType,
       sessionId:  sessionId,
       attribution: attribution,
       notes:       opts.notes,
+      internal:    isInternal || undefined,
     });
 
     // Prefer sendBeacon — survives page unload

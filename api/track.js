@@ -77,10 +77,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { event_type, attribution = {}, sessionId, notes } = req.body || {};
+    const { event_type, attribution = {}, sessionId, notes, internal } = req.body || {};
     if (!event_type || !ALLOWED_EVENTS.has(event_type)) {
       return res.status(400).json({ error: `event_type must be one of: ${[...ALLOWED_EVENTS].join(", ")}` });
     }
+
+    // Vercel sets x-vercel-ip-country to the visitor's ISO-2 country code
+    // (e.g. "US", "ES", "GB"). We tag every event with this so the dashboard
+    // can filter out non-US traffic (Luke testing from Spain, bots from CN,
+    // etc.) without us needing client-side geolocation.
+    const country = (req.headers["x-vercel-ip-country"] || "").toString().slice(0, 2).toUpperCase();
 
     const fields = {
       "Event ID":     makeEventId(),
@@ -91,18 +97,35 @@ export default async function handler(req, res) {
       "Referrer":     (attribution.referrer     || "").slice(0, 500) || undefined,
       "Landing URL":  (attribution.landing_url  || "").slice(0, 500) || undefined,
       "Session ID":   (sessionId                || "").slice(0, 64),
+      "Country":      country || undefined,
+      "Internal":     internal === true || internal === "true" ? true : undefined,
     };
     if (notes) fields["Notes"] = String(notes).slice(0, 1000);
 
     // Strip any undefined values so Airtable doesn't choke.
     Object.keys(fields).forEach(k => fields[k] === undefined && delete fields[k]);
 
-    const r = await fetch(airtableUrl(AT_FUNNEL), {
+    let r = await fetch(airtableUrl(AT_FUNNEL), {
       method: "POST",
       headers: airtableHeaders(),
       body: JSON.stringify({ fields, typecast: true }),
     });
-    const data = await r.json();
+    let data = await r.json();
+
+    // Graceful fallback if Country/Internal aren't on the schema yet
+    // (e.g. setup-tracking-fields hasn't been run). Strip them and retry
+    // so we never drop an event over a missing column.
+    if (data.error && /UNKNOWN_FIELD_NAME/i.test(data.error.type || data.error.message || "")) {
+      delete fields["Country"];
+      delete fields["Internal"];
+      r = await fetch(airtableUrl(AT_FUNNEL), {
+        method: "POST",
+        headers: airtableHeaders(),
+        body: JSON.stringify({ fields, typecast: true }),
+      });
+      data = await r.json();
+    }
+
     if (data.error) {
       console.error("[track] Airtable error:", data.error);
       return res.status(200).json({ ok: false, error: data.error.message });

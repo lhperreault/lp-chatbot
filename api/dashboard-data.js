@@ -121,6 +121,23 @@ export default async function handler(req, res) {
 
   const days = Math.max(1, Math.min(180, parseInt(req.query?.days || "7", 10) || 7));
 
+  // When `includeInternal=1` is passed, return everything (Luke's "show me
+  // my test traffic" toggle). Default: drop events where Internal=true or
+  // Country is set to anything other than "US" — i.e. only count real US
+  // visitors so the KPIs aren't polluted by Luke testing from Spain.
+  // Events missing both fields (legacy data) are kept — we can't tell
+  // them apart and most predate this filter so they're almost certainly
+  // real.
+  const includeInternal = req.query?.includeInternal === "1" || req.query?.includeInternal === "true";
+  function isInternalEvent(r) {
+    const f = r.fields || {};
+    if (f["Internal"] === true) return true;
+    const c = (f["Country"] || "").toString().trim().toUpperCase();
+    if (c && c !== "US") return true;
+    return false;
+  }
+  const dropInternal = arr => includeInternal ? arr : arr.filter(r => !isInternalEvent(r));
+
   try {
     const cutoffCurr = isoDaysAgo(days);
     const cutoffPrev = isoDaysAgo(days * 2);
@@ -129,7 +146,7 @@ export default async function handler(req, res) {
     const currMs = Date.parse(cutoffCurr);
     const prevMs = Date.parse(cutoffPrev);
 
-    const [funnelRows, yelpRows, allJobs, recent24h, formSubmits12wk, coldJobs] = await Promise.all([
+    const [funnelRowsRaw, yelpRows, allJobs, recent24hRaw, formSubmits12wkRaw, coldJobs] = await Promise.all([
       // Last 2N days of funnel events covers curr + prev windows
       fetchAll(AT_FUNNEL, { filterByFormula: `IS_AFTER({Timestamp}, DATETIME_PARSE('${cutoffPrev}'))` }),
       fetchAll(AT_YELP,   { filterByFormula: `IS_AFTER({Week ending}, DATETIME_PARSE('${cutoff12wk}'))` }),
@@ -151,6 +168,16 @@ export default async function handler(req, res) {
         "fields[]": ["Job ID", "Client", "Service type", "Pipeline stage", "Last touch", "Outreach attempts", "Notes from Luke"],
       }),
     ]);
+
+    // Drop internal/non-US events from every funnel-event aggregation
+    // (KPIs, web funnel, channel mix, leads-by-source, recent activity).
+    // The toggle on the dashboard sets ?includeInternal=1 to bypass.
+    const funnelRows      = dropInternal(funnelRowsRaw);
+    const recent24h       = dropInternal(recent24hRaw);
+    const formSubmits12wk = dropInternal(formSubmits12wkRaw);
+    const filteredOutCount = (funnelRowsRaw.length - funnelRows.length)
+                           + (recent24hRaw.length - recent24h.length)
+                           + (formSubmits12wkRaw.length - formSubmits12wk.length);
 
     // ── Funnel events: bucket by curr/prev for top-of-funnel + outreach ─────
     const eventCounts = { curr: {}, prev: {} };
@@ -384,6 +411,8 @@ export default async function handler(req, res) {
         eventType: r.fields["Event type"] || "?",
         source:    r.fields["UTM source"] || "",
         notes:     r.fields["Notes"]      || "",
+        country:   r.fields["Country"]    || "",
+        internal:  r.fields["Internal"] === true,
       }))
       .sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0))
       .slice(0, 100);
@@ -391,6 +420,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       generatedAt: new Date().toISOString(),
       windowDays: days,
+      includeInternal,
+      filteredOutCount, // for the dashboard's "N internal events hidden" hint
       kpis: {
         // Business (Jobs)
         booked:         { value: bookedCurrCount,  prev: bookedPrevCount,  change: pctChange(bookedCurrCount,  bookedPrevCount)  },
