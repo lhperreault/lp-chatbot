@@ -169,6 +169,64 @@
   }
   .channel-filter:focus { outline: 0; border-color: #2f81f7; }
   .channel-filter.has-value { border-color: #2f81f7; color: #79c0ff; background-color: #142233; }
+
+  /* Funnel cards (web inbound funnel — 5 stages, decreasing) and
+     pipeline cards (Landing-page leads → Quoted → Booked). Same visual
+     style; pipeline cards are larger because there are fewer of them. */
+  .funnel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px; margin-bottom: 16px;
+  }
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px; margin-bottom: 16px;
+  }
+  .funnel-card, .pipeline-card {
+    background: #161b22; border: 1px solid #21262d; border-radius: 10px;
+    padding: 14px 16px;
+    display: flex; flex-direction: column;
+    min-height: 130px;
+  }
+  .funnel-card .label, .pipeline-card .label {
+    font-size: 10px; font-weight: 600; color: #8b949e;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .funnel-card .value, .pipeline-card .value {
+    font-size: 30px; font-weight: 700; color: #c9d1d9;
+    margin-top: 4px; line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .pipeline-card .value { font-size: 34px; }
+  .funnel-card.primary .value, .pipeline-card.primary .value { color: #79c0ff; }
+  .funnel-card.primary, .pipeline-card.primary {
+    background: #142233; border-color: #2f81f7;
+  }
+  .funnel-card .conv {
+    margin-top: 4px;
+    font-size: 12px; color: #7ee787; font-weight: 600;
+  }
+  .funnel-card .conv.low { color: #f0883e; }
+  .funnel-card .conv.zero { color: #8b949e; }
+  .funnel-card .sub, .pipeline-card .sub {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid #21262d;
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: #8b949e;
+  }
+  .funnel-card .sub strong, .pipeline-card .sub strong {
+    color: #c9d1d9; font-weight: 600;
+  }
+  /* Arrow between funnel/pipeline cards on wider screens */
+  @media (min-width: 900px) {
+    .funnel-grid, .pipeline-grid { position: relative; }
+  }
+  /* Compact "outreach + Yelp" pill row that survives the funnel restructure */
+  .kpi-grid.compact { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .kpi-grid.compact .kpi { padding: 10px 12px; }
+  .kpi-grid.compact .kpi-value { font-size: 18px; }
   .error-banner {
     background: #3a1d1d; color: #ffa198; padding: 12px 16px;
     border-radius: 8px; margin-bottom: 16px; font-size: 13px;
@@ -218,8 +276,14 @@
   <div class="section-label">Business</div>
   <div class="kpi-grid" id="kpi-business"></div>
 
-  <div class="section-label">Web inbound funnel · outreach · Yelp</div>
-  <div class="kpi-grid" id="kpi-secondary"></div>
+  <div class="section-label">Web inbound funnel — sessions → CTA → partial → submit → chatbot quote</div>
+  <div class="funnel-grid" id="funnel-grid"></div>
+
+  <div class="section-label">Marketing pipeline — landing-page leads → quoted → booked</div>
+  <div class="pipeline-grid" id="pipeline-grid"></div>
+
+  <div class="section-label">Outreach · Yelp</div>
+  <div class="kpi-grid compact" id="kpi-secondary"></div>
 
   <div class="row row-3">
     <div class="card">
@@ -298,11 +362,9 @@
     { key: "organicBooked",   label: "Organic booked",   fmt: n => n },
     { key: "repeatBooked",    label: "Repeat customers", fmt: n => n },
   ];
+  // Funnel/pipeline now own Page views, Form submits, Partial leads, Chat engaged.
+  // Secondary row keeps only the metrics that don't fit the inbound funnel.
   const SECONDARY_KPIS = [
-    { key: "pageViews",    label: "Page views",     fmt: n => n },
-    { key: "formSubmits",  label: "Form submits",   fmt: n => n },
-    { key: "partialLeads", label: "Partial leads",  fmt: n => n },
-    { key: "chatEngaged",  label: "Chat engaged",   fmt: n => n },
     { key: "outreach",     label: "Outreach",       fmt: n => n },
     { key: "responses",    label: "Responses",      fmt: n => n },
     { key: "replyRate",    label: "Reply rate",     fmt: n => n == null ? "—" : `${n}%`, isPp: true },
@@ -447,6 +509,122 @@
         </div>
       `);
     }
+  }
+
+  // ── Funnel cards ──────────────────────────────────────────────────────
+  // Each stage shows a count, the conversion % from the previous stage,
+  // and a small "sub" block at the bottom with secondary numbers.
+  function pct(numer, denom) {
+    if (!denom) return null;
+    return Math.round((numer / denom) * 100);
+  }
+  function convPillClass(p) {
+    if (p == null)        return "zero";
+    if (p >= 25)          return "";        // green default
+    if (p >= 10)          return "";        // green
+    return "low";                            // amber
+  }
+  function pctText(p, ofLabel) {
+    if (p == null) return `<span class="conv zero">no prior stage</span>`;
+    return `<span class="conv ${convPillClass(p)}">${p}% of ${ofLabel}</span>`;
+  }
+
+  function renderFunnel(f) {
+    f = f || {};
+    const grid = document.getElementById("funnel-grid");
+    const ctaPct      = pct(f.ctaClicks,    f.sessions);
+    const partialPct  = pct(f.partial,      f.ctaClicks);
+    const submitPct   = pct(f.formSubmits,  f.partial);
+    const chatbotPct  = pct(f.chatbotQuotes,f.formSubmits);
+
+    const cards = [
+      // 1. Sessions
+      {
+        label: "Sessions",
+        value: (f.sessions ?? 0).toLocaleString(),
+        primary: true,
+        conv: null,
+        sub: `<span>Page views <strong>${(f.pageViews ?? 0).toLocaleString()}</strong></span><span>Avg/session <strong>${f.pagesPerSession ?? "—"}</strong></span>`,
+      },
+      // 2. CTA clicks
+      {
+        label: "CTA clicked",
+        value: (f.ctaClicks ?? 0).toLocaleString(),
+        conv: pctText(ctaPct, "sessions"),
+        sub: `<span>Click-through rate</span><span><strong>${ctaPct == null ? "—" : ctaPct + "%"}</strong></span>`,
+      },
+      // 3. Partial captures
+      {
+        label: "Partial form (name + phone)",
+        value: (f.partial ?? 0).toLocaleString(),
+        conv: pctText(partialPct, "CTA clicks"),
+        sub: `<span>Of CTA clicks</span><span><strong>${partialPct == null ? "—" : partialPct + "%"}</strong></span>`,
+      },
+      // 4. Form submits
+      {
+        label: "Form submitted",
+        value: (f.formSubmits ?? 0).toLocaleString(),
+        conv: pctText(submitPct, "partial"),
+        sub: `<span>Of partial → submitted</span><span><strong>${submitPct == null ? "—" : submitPct + "%"}</strong></span>`,
+      },
+      // 5. Chatbot quote
+      {
+        label: "Chatbot estimate",
+        value: (f.chatbotQuotes ?? 0).toLocaleString(),
+        conv: pctText(chatbotPct, "submits"),
+        sub: `<span>Of submits → quote</span><span><strong>${chatbotPct == null ? "—" : chatbotPct + "%"}</strong></span>`,
+      },
+    ];
+
+    grid.innerHTML = cards.map(c => `
+      <div class="funnel-card ${c.primary ? "primary" : ""}">
+        <div class="label">${c.label}</div>
+        <div class="value">${c.value}</div>
+        ${c.conv || ""}
+        <div class="sub">${c.sub}</div>
+      </div>
+    `).join("");
+  }
+
+  // ── Marketing pipeline cards ──────────────────────────────────────────
+  // Landing-page leads → Quoted → Booked. The leads count is the same as
+  // funnel.partial (all clients who entered phone in window, inclusive of
+  // those who also submitted). Quoted/Booked are the subset of those
+  // leads whose linked Jobs have a Quote/Booking date in the window.
+  function renderPipeline(f) {
+    f = f || {};
+    const grid = document.getElementById("pipeline-grid");
+    const quotedPct = pct(f.landingQuoted, f.landingLeads);
+    const bookedPctLeads  = pct(f.landingBooked, f.landingLeads);
+    const bookedPctQuoted = pct(f.landingBooked, f.landingQuoted);
+
+    const cards = [
+      {
+        label: "Landing page leads",
+        value: (f.landingLeads ?? 0).toLocaleString(),
+        primary: true,
+        sub: `<span>Entered name + phone via the widget</span>`,
+      },
+      {
+        label: "Quoted (from landing leads)",
+        value: (f.landingQuoted ?? 0).toLocaleString(),
+        sub: `<span>Of landing leads → quoted</span><span><strong>${quotedPct == null ? "—" : quotedPct + "%"}</strong></span>`,
+      },
+      {
+        label: "Booked (from landing leads)",
+        value: (f.landingBooked ?? 0).toLocaleString(),
+        sub: `<span>Of leads</span><span><strong>${bookedPctLeads == null ? "—" : bookedPctLeads + "%"}</strong></span>` +
+             ` · <span>Of quoted</span><span><strong>${bookedPctQuoted == null ? "—" : bookedPctQuoted + "%"}</strong></span>`,
+      },
+    ];
+
+    grid.innerHTML = cards.map(c => `
+      <div class="pipeline-card ${c.primary ? "primary" : ""}">
+        <div class="label">${c.label}</div>
+        <div class="value">${c.value}</div>
+        <div class="sub">${c.sub}</div>
+      </div>
+    `).join("");
   }
 
   function makeOrUpdateChart(id, config) {
@@ -802,6 +980,8 @@
 
       renderInternalBanner(data);
       renderKPISet("kpi-business",  BUSINESS_KPIS,  data.kpis);
+      renderFunnel(data.funnel);
+      renderPipeline(data.funnel);
       renderKPISet("kpi-secondary", SECONDARY_KPIS, data.kpis);
       renderChannelMix(data.channelMix);
       renderChannelTable(data.channelBreakdown);

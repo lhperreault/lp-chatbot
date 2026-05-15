@@ -480,6 +480,8 @@ export default async function handler(req, res) {
     // is, by construction, someone who fired the partial-capture flow in
     // /api/estimate but never hit Submit. We sort newest-first so the most
     // recent abandoners (still warm enough to follow up) are on top.
+    // Action-items card: clients who entered name+phone but never submitted
+    // (no linked Job). Sorted newest-first, capped at 30.
     const partialLeads = filteredRecentClients
       .filter(c => {
         const jobs = c.fields["Jobs"];
@@ -493,9 +495,6 @@ export default async function handler(req, res) {
           phone:          c.fields["Phone"] || "",
           email:          c.fields["Email"] || "",
           address:        c.fields["Address"] || "",
-          // Source on Client is always the hardcoded "Website" label (just
-          // means "captured via the WP widget"). UTM source is the actual
-          // marketing channel — surface that as `channel` for the card.
           source:         c.fields["Source"] || "",
           utmSource:      utm,
           channel:        utm || "direct",
@@ -504,10 +503,52 @@ export default async function handler(req, res) {
       })
       .sort((a, b) => (a.firstContacted < b.firstContacted ? 1 : a.firstContacted > b.firstContacted ? -1 : 0))
       .slice(0, 30);
-    const partialLeadsCurrCount = partialLeads.length;
-    // Prev-window count for the KPI delta (rough — uses formula filter on phone+contacted)
-    // We didn't fetch prev-window clients separately to keep round-trips low, so this is
-    // approximated as null (no prior comparison shown).
+
+    // ── Web funnel + marketing pipeline metrics ─────────────────────────────
+    // The funnel is monotonically decreasing as visitors drop off:
+    //   Sessions → CTA clicks → Partial captures → Form submits → Chatbot quotes
+    // "Landing page leads" is the full Partial-captures bucket (anyone who
+    // entered name+phone, including those who also submitted) — used as the
+    // starting point for the marketing pipeline (Quoted, Booked).
+    const sessionsInWindow = new Set();
+    for (const r of funnelRows) {
+      if (r.fields["Event type"] !== "Page view") continue;
+      const t = r.fields["Timestamp"];
+      if (t && Date.parse(t) >= currMs) {
+        const sid = r.fields["Session ID"];
+        if (sid) sessionsInWindow.add(sid);
+      }
+    }
+    const sessionsCurr  = sessionsInWindow.size;
+    const pageViewsCurr = eventCounts.curr["Page view"] || 0;
+    const pagesPerSession = sessionsCurr ? +((pageViewsCurr / sessionsCurr).toFixed(2)) : 0;
+    const ctaClicksCurr = eventCounts.curr["CTA click"]      || 0;
+    const formSubsCurr  = eventCounts.curr["Form submitted"] || 0;
+    const quoteSentCurr = eventCounts.curr["Quote sent"]     || 0;
+
+    // Landing page leads = all clients in window with phone (inclusive of
+    // submitted). Pipeline uses Job linkage to track which of those leads
+    // got Quoted / Booked.
+    const landingLeads = filteredRecentClients; // already channel-filtered, has phone
+    const landingLeadsCount = landingLeads.length;
+
+    // Build clientId → jobs index from the (unfiltered) full Jobs set so
+    // we can resolve a landing-page client to its actual job outcomes.
+    const jobsByClient = {};
+    for (const j of allJobs) {
+      const cid = (j.fields["Client"] || [])[0];
+      if (cid) (jobsByClient[cid] ||= []).push(j);
+    }
+    let landingQuotedCount = 0;
+    let landingBookedCount = 0;
+    for (const c of landingLeads) {
+      const jobs = jobsByClient[c.id] || [];
+      // A landing-page lead counts as Quoted/Booked if ANY of its jobs has
+      // a Quote/Booking date inside the window. Conservative — same date
+      // bounds as the BUSINESS KPIs at the top of the dashboard.
+      if (jobs.some(j => inWindow(j.fields["Quote date"],   currMs))) landingQuotedCount++;
+      if (jobs.some(j => inWindow(j.fields["Booking date"], currMs))) landingBookedCount++;
+    }
 
     // ── Recent activity (last 24h) ─────────────────────────────────────────
     const recent = recent24h
@@ -542,8 +583,10 @@ export default async function handler(req, res) {
         ctaClicks:    evKpi("CTA click"),
         formSubmits:  evKpi("Form submitted"),
         chatEngaged:  evKpi("Chat engaged"),
-        // Partial-form captures — counted as leads even though they didn't submit
-        partialLeads: { value: partialLeadsCurrCount, prev: null, change: null },
+        // Partial-form captures — counted as leads even though they didn't submit.
+        // This counts the actionable bucket (didn't yet hit Submit). The
+        // inclusive "anyone who entered name+phone" count is in `funnel.partial` below.
+        partialLeads: { value: partialLeads.length, prev: null, change: null },
         // Outreach + replies
         outreach:     evKpi("Outreach attempt"),
         responses:    evKpi("Customer responded"),
@@ -562,6 +605,21 @@ export default async function handler(req, res) {
       coldLeads,
       recentActivity: recent,
       partialLeads,
+      // 5-stage web funnel (Sessions → CTA → Partial → Submit → Chatbot quote)
+      // and the marketing pipeline (Landing-page leads → Quoted → Booked).
+      // All percentages computed client-side from these raw counts.
+      funnel: {
+        sessions:        sessionsCurr,
+        pageViews:       pageViewsCurr,
+        pagesPerSession,
+        ctaClicks:       ctaClicksCurr,
+        partial:         landingLeadsCount, // inclusive — includes those who also submitted
+        formSubmits:     formSubsCurr,
+        chatbotQuotes:   quoteSentCurr,
+        landingLeads:    landingLeadsCount,
+        landingQuoted:   landingQuotedCount,
+        landingBooked:   landingBookedCount,
+      },
     });
   } catch (err) {
     console.error("[dashboard-data] error:", err);
