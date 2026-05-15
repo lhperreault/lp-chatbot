@@ -529,7 +529,7 @@
     return `<span class="conv ${convPillClass(p)}">${p}% of ${ofLabel}</span>`;
   }
 
-  function renderFunnel(f) {
+  function renderFunnelCards(f) {
     f = f || {};
     const grid = document.getElementById("funnel-grid");
     const ctaPct      = pct(f.ctaClicks,    f.sessions);
@@ -980,7 +980,7 @@
 
       renderInternalBanner(data);
       renderKPISet("kpi-business",  BUSINESS_KPIS,  data.kpis);
-      renderFunnel(data.funnel);
+      renderFunnelCards(data.funnel);
       renderPipeline(data.funnel);
       renderKPISet("kpi-secondary", SECONDARY_KPIS, data.kpis);
       renderChannelMix(data.channelMix);
