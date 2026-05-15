@@ -94,6 +94,30 @@
   .pill.other      { background: #21262d; color: #c9d1d9; }
 
   .empty { color: #8b949e; font-size: 13px; padding: 12px 0; }
+
+  /* Card header with inline filters (e.g. Recent activity) */
+  .card-head {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .card-head h2 { margin: 0; }
+  .card-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .card-filters select {
+    background: #0e1117; color: #c9d1d9;
+    border: 1px solid #21262d; border-radius: 6px;
+    padding: 4px 22px 4px 8px;
+    font-size: 11px; font-family: inherit;
+    cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%238b949e'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
+  }
+  .card-filters select:focus { outline: 0; border-color: #2f81f7; }
+  .card-filters select.has-value { border-color: #2f81f7; color: #79c0ff; }
+  .filter-result-count {
+    color: #8b949e; font-size: 11px; padding-bottom: 8px;
+  }
   #last-updated { color: #6e7681; font-size: 11px; margin-top: 12px; text-align: right; }
   .error-banner {
     background: #3a1d1d; color: #ffa198; padding: 12px 16px;
@@ -178,7 +202,18 @@
       <div id="cold-leads"></div>
     </div>
     <div class="card">
-      <h2>Recent activity (last 24h)</h2>
+      <div class="card-head">
+        <h2>Recent activity (last 24h)</h2>
+        <div class="card-filters">
+          <select id="recent-filter-event" title="Filter by event type">
+            <option value="">All events</option>
+          </select>
+          <select id="recent-filter-source" title="Filter by source">
+            <option value="">All sources</option>
+          </select>
+        </div>
+      </div>
+      <div id="recent-filter-count" class="filter-result-count" style="display:none"></div>
       <div id="recent-activity"></div>
     </div>
   </div>
@@ -444,10 +479,64 @@
     }).join("");
   }
 
+  // Cache the raw rows so filter changes don't require a re-fetch.
+  let recentRowsCache = [];
+
   function renderRecent(rows) {
+    recentRowsCache = rows || [];
+    populateRecentFilterOptions(recentRowsCache);
+    renderRecentFiltered();
+  }
+
+  function populateRecentFilterOptions(rows) {
+    const evSel  = document.getElementById("recent-filter-event");
+    const srcSel = document.getElementById("recent-filter-source");
+
+    const eventTypes = [...new Set(rows.map(r => r.eventType).filter(Boolean))].sort();
+    const sources    = [...new Set(rows.map(r => r.source).filter(Boolean))].sort();
+
+    // Preserve any current selection across re-renders
+    const evPrev  = evSel.value;
+    const srcPrev = srcSel.value;
+
+    evSel.innerHTML = `<option value="">All events</option>` +
+      eventTypes.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+    srcSel.innerHTML = `<option value="">All sources</option>` +
+      sources.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+
+    if (eventTypes.includes(evPrev))  evSel.value  = evPrev;
+    if (sources.includes(srcPrev))    srcSel.value = srcPrev;
+  }
+
+  function renderRecentFiltered() {
     const el = document.getElementById("recent-activity");
-    if (!rows.length) { el.innerHTML = `<div class="empty">No activity in the last 24h.</div>`; return; }
-    el.innerHTML = rows.map(r => `
+    const countEl = document.getElementById("recent-filter-count");
+    const evSel  = document.getElementById("recent-filter-event");
+    const srcSel = document.getElementById("recent-filter-source");
+    const evFilter  = evSel.value;
+    const srcFilter = srcSel.value;
+
+    evSel.classList.toggle("has-value", !!evFilter);
+    srcSel.classList.toggle("has-value", !!srcFilter);
+
+    const filtered = recentRowsCache.filter(r => {
+      if (evFilter  && r.eventType !== evFilter)  return false;
+      if (srcFilter && r.source    !== srcFilter) return false;
+      return true;
+    });
+
+    if (evFilter || srcFilter) {
+      countEl.style.display = "block";
+      countEl.textContent = `${filtered.length} of ${recentRowsCache.length} shown`;
+    } else {
+      countEl.style.display = "none";
+    }
+
+    if (!filtered.length) {
+      el.innerHTML = `<div class="empty">${recentRowsCache.length === 0 ? "No activity in the last 24h." : "No activity matches this filter."}</div>`;
+      return;
+    }
+    el.innerHTML = filtered.map(r => `
       <div class="list-item">
         <div>
           <span class="pill event">${escapeHtml(r.eventType)}</span>
@@ -458,6 +547,9 @@
       </div>
     `).join("");
   }
+
+  document.getElementById("recent-filter-event").addEventListener("change", renderRecentFiltered);
+  document.getElementById("recent-filter-source").addEventListener("change", renderRecentFiltered);
 
   async function load() {
     const errEl = document.getElementById("error");

@@ -386,7 +386,7 @@ export default async function handler(req, res) {
         notes:     r.fields["Notes"]      || "",
       }))
       .sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0))
-      .slice(0, 20);
+      .slice(0, 100);
 
     return res.status(200).json({
       generatedAt: new Date().toISOString(),
