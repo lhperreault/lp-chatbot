@@ -153,6 +153,22 @@
   .pill.action-call:hover { background: #244d39; }
   .pill.action-sms  { background: #1f3a52; color: #79c0ff; padding: 4px 10px; font-weight: 600; }
   .pill.action-sms:hover  { background: #284a64; }
+
+  /* Channel filter dropdown in the header — slices the entire dashboard
+     to one marketing source (Meta, Yelp, Google, etc.) */
+  .channel-filter {
+    background: #161b22; color: #c9d1d9;
+    border: 1px solid #21262d; border-radius: 8px;
+    padding: 6px 28px 6px 12px;
+    font-size: 13px; font-family: inherit; font-weight: 500;
+    cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%238b949e'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+  .channel-filter:focus { outline: 0; border-color: #2f81f7; }
+  .channel-filter.has-value { border-color: #2f81f7; color: #79c0ff; background-color: #142233; }
   .error-banner {
     background: #3a1d1d; color: #ffa198; padding: 12px 16px;
     border-radius: 8px; margin-bottom: 16px; font-size: 13px;
@@ -172,6 +188,9 @@
       <button class="mark-btn" id="mark-internal-btn" title="Tap once per browser/device. Opens lppressurewash.com to set the opt-out flag on the tracking domain. After that, every visit you make from this browser is excluded from dashboard numbers — works regardless of country.">Mark this device internal</button>
       <button class="toggle-btn" id="toggle-internal-btn" title="Show events filtered out by country/internal rules">Show internal</button>
     </div>
+    <select id="channel-filter" class="channel-filter" title="Filter all KPIs and cards to a single marketing channel">
+      <option value="">All channels</option>
+    </select>
     <a id="ops-link" href="ops.html" style="color:#79c0ff; font-size:12px; text-decoration:none; padding:6px 10px; border:1px solid #21262d; border-radius:6px;">Kanban →</a>
     <div class="range-toggle" id="range-toggle">
       <button data-days="7" class="active">7d</button>
@@ -280,14 +299,15 @@
     { key: "repeatBooked",    label: "Repeat customers", fmt: n => n },
   ];
   const SECONDARY_KPIS = [
-    { key: "pageViews",   label: "Page views",     fmt: n => n },
-    { key: "formSubmits", label: "Form submits",   fmt: n => n },
-    { key: "chatEngaged", label: "Chat engaged",   fmt: n => n },
-    { key: "outreach",    label: "Outreach",       fmt: n => n },
-    { key: "responses",   label: "Responses",      fmt: n => n },
-    { key: "replyRate",   label: "Reply rate",     fmt: n => n == null ? "—" : `${n}%`, isPp: true },
-    { key: "yelpSpend",   label: "Yelp $ this wk", fmt: n => `$${n.toFixed(0)}` },
-    { key: "yelpCpl",     label: "Yelp CPL",       fmt: n => `$${n.toFixed(2)}` },
+    { key: "pageViews",    label: "Page views",     fmt: n => n },
+    { key: "formSubmits",  label: "Form submits",   fmt: n => n },
+    { key: "partialLeads", label: "Partial leads",  fmt: n => n },
+    { key: "chatEngaged",  label: "Chat engaged",   fmt: n => n },
+    { key: "outreach",     label: "Outreach",       fmt: n => n },
+    { key: "responses",    label: "Responses",      fmt: n => n },
+    { key: "replyRate",    label: "Reply rate",     fmt: n => n == null ? "—" : `${n}%`, isPp: true },
+    { key: "yelpSpend",    label: "Yelp $ this wk", fmt: n => `$${n.toFixed(0)}` },
+    { key: "yelpCpl",      label: "Yelp CPL",       fmt: n => `$${n.toFixed(2)}` },
   ];
 
   const charts = {};
@@ -305,6 +325,8 @@
   }
   sessionStorage.setItem("lp_ops_key", apiKey);
   let currentDays = parseInt(qs.get("days") || "7", 10) || 7;
+  // Channel filter: URL > session > "all". Persists per-tab.
+  let currentChannel = qs.get("channel") || sessionStorage.getItem("lp_channel") || "";
   const apiBase = (qs.get("api") || "").replace(/\/$/, "");
 
   function setActiveRange(d) {
@@ -319,6 +341,20 @@
     if (!btn) return;
     currentDays = parseInt(btn.dataset.days, 10);
     setActiveRange(currentDays);
+    load();
+  });
+
+  // Channel filter dropdown
+  const channelSel = document.getElementById("channel-filter");
+  function refreshChannelSelStyle() {
+    channelSel.classList.toggle("has-value", !!currentChannel);
+  }
+  refreshChannelSelStyle();
+  channelSel.addEventListener("change", () => {
+    currentChannel = channelSel.value;
+    if (currentChannel) sessionStorage.setItem("lp_channel", currentChannel);
+    else                sessionStorage.removeItem("lp_channel");
+    refreshChannelSelStyle();
     load();
   });
 
@@ -629,13 +665,16 @@
       const href = phoneHref(p.phone);
       const callLink = href ? `<a href="tel:${href}" class="pill action-call" style="text-decoration:none">📞 Call</a>` : "";
       const smsLink  = href ? `<a href="sms:${href}" class="pill action-sms"  style="text-decoration:none;margin-left:4px">💬 Text</a>` : "";
-      const opsHref  = `ops.html${apiKey ? "?key=" + encodeURIComponent(apiKey) : ""}`;
+      // Prefer UTM source (the actual marketing channel) over the hardcoded
+      // "Website" source label that's stamped on every widget-captured Client.
+      const channel = p.utmSource || p.channel || "";
+      const channelLabel = channel && channel !== "direct" ? channel : "direct";
       return `
         <div class="list-item">
           <div>
             <div><strong>${escapeHtml(p.name)}</strong>${p.phone ? ` · <a href="tel:${href}" style="color:#79c0ff;text-decoration:none">${escapeHtml(p.phone)}</a>` : ""}</div>
             <div class="meta">
-              ${escapeHtml(ago(p.firstContacted))}${p.source ? ` · via ${escapeHtml(p.source)}` : ""}${p.address ? ` · ${escapeHtml(p.address.slice(0, 60))}${p.address.length > 60 ? "…" : ""}` : ""}
+              ${escapeHtml(ago(p.firstContacted))} · via ${escapeHtml(channelLabel)}${p.address ? ` · ${escapeHtml(p.address.slice(0, 60))}${p.address.length > 60 ? "…" : ""}` : ""}
             </div>
           </div>
           <div style="white-space:nowrap">${callLink}${smsLink}</div>
@@ -736,6 +775,7 @@
       const params = new URLSearchParams({ days: String(currentDays) });
       if (apiKey) params.set("key", apiKey);
       if (showInternal) params.set("includeInternal", "1");
+      if (currentChannel) params.set("channel", currentChannel);
       const url = `${apiBase}/api/dashboard-data?${params.toString()}`;
       const r = await fetch(url);
       if (!r.ok) {
@@ -743,6 +783,23 @@
         throw new Error(body.error || `HTTP ${r.status}`);
       }
       const data = await r.json();
+
+      // Populate the channel dropdown the first time we have data (or when
+      // the server's known-channels list changes). Preserves selection.
+      if (Array.isArray(data.channels)) {
+        const existingOpts = [...channelSel.options].map(o => o.value);
+        const wanted = ["", ...data.channels.map(c => c.key)];
+        const needsRebuild = wanted.length !== existingOpts.length || wanted.some((v, i) => v !== existingOpts[i]);
+        if (needsRebuild) {
+          const prev = channelSel.value;
+          channelSel.innerHTML = `<option value="">All channels</option>` +
+            data.channels.map(c => `<option value="${escapeHtml(c.key)}">${escapeHtml(c.label)}</option>`).join("");
+          channelSel.value = prev;
+        }
+        if (currentChannel) channelSel.value = currentChannel;
+        refreshChannelSelStyle();
+      }
+
       renderInternalBanner(data);
       renderKPISet("kpi-business",  BUSINESS_KPIS,  data.kpis);
       renderKPISet("kpi-secondary", SECONDARY_KPIS, data.kpis);

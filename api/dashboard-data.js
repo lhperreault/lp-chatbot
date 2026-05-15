@@ -26,6 +26,46 @@ const CHANNEL_GROUPS = {
   organic:   ["Referral", "Repeat", "Yard sign / truck", "Door Knocking", "In person"],
 };
 
+// Channel filter mapping — unifies the different naming conventions used
+// across Jobs ("Lead origin": "Meta ads"), Funnel events ("UTM source":
+// "meta"), and Clients (UTM source: "meta"). When the dashboard's channel
+// dropdown is set, KPIs/funnels are restricted to records matching the
+// channel's combined leadOrigin + utmSource buckets.
+const CHANNEL_FILTERS = {
+  meta:     { label: "Meta (FB/IG)",     leadOrigin: new Set(["Meta ads"]),    utmSource: new Set(["meta", "facebook", "instagram"]) },
+  yelp:     { label: "Yelp",             leadOrigin: new Set(["Yelp"]),        utmSource: new Set(["yelp"]) },
+  google:   { label: "Google",           leadOrigin: new Set(["Google"]),      utmSource: new Set(["google"]) },
+  angi:     { label: "Angi",             leadOrigin: new Set(["Angi"]),        utmSource: new Set(["angi"]) },
+  website:  { label: "Website (organic)",leadOrigin: new Set(["Website"]),     utmSource: new Set([""]) },
+  referral: { label: "Referral",         leadOrigin: new Set(["Referral"]),    utmSource: new Set([]) },
+  repeat:   { label: "Repeat customer",  leadOrigin: new Set(["Repeat"]),      utmSource: new Set([]) },
+  other:    { label: "Other",            leadOrigin: new Set(["Yard sign / truck", "Door Knocking", "In person", "Website chatbot"]),    utmSource: new Set([]) },
+};
+function jobMatchesChannel(j, ch) {
+  if (!ch) return true;
+  const cfg = CHANNEL_FILTERS[ch];
+  if (!cfg) return true;
+  const lo = (j.fields["Lead origin"] || "").trim();
+  return cfg.leadOrigin.has(lo);
+}
+function eventMatchesChannel(r, ch) {
+  if (!ch) return true;
+  const cfg = CHANNEL_FILTERS[ch];
+  if (!cfg) return true;
+  const utm = (r.fields["UTM source"] || "").toString().toLowerCase().trim();
+  // Empty-string match works for the "website" / organic case where UTM is blank
+  if (cfg.utmSource.has(utm)) return true;
+  return false;
+}
+function clientMatchesChannel(c, ch) {
+  if (!ch) return true;
+  const cfg = CHANNEL_FILTERS[ch];
+  if (!cfg) return true;
+  const utm = (c.fields["UTM source"] || "").toString().toLowerCase().trim();
+  if (cfg.utmSource.has(utm)) return true;
+  return false;
+}
+
 // Funnel chart — web-inbound only, ends at Quote sent. Post-quote stages
 // (Outreach, Booked) live in the channel-breakdown table since they happen
 // across all channels.
@@ -138,6 +178,11 @@ export default async function handler(req, res) {
   }
   const dropInternal = arr => includeInternal ? arr : arr.filter(r => !isInternalEvent(r));
 
+  // Channel filter — restricts KPIs/cards to a single marketing channel.
+  // Pass `?channel=meta` etc. (see CHANNEL_FILTERS above). Empty = no filter.
+  const channelKey = (req.query?.channel || "").toString().toLowerCase().trim();
+  const channel = channelKey && CHANNEL_FILTERS[channelKey] ? channelKey : "";
+
   try {
     const cutoffCurr = isoDaysAgo(days);
     const cutoffPrev = isoDaysAgo(days * 2);
@@ -181,12 +226,29 @@ export default async function handler(req, res) {
     // Drop internal/non-US events from every funnel-event aggregation
     // (KPIs, web funnel, channel mix, leads-by-source, recent activity).
     // The toggle on the dashboard sets ?includeInternal=1 to bypass.
-    const funnelRows      = dropInternal(funnelRowsRaw);
-    const recent24h       = dropInternal(recent24hRaw);
-    const formSubmits12wk = dropInternal(formSubmits12wkRaw);
+    let funnelRows      = dropInternal(funnelRowsRaw);
+    let recent24h       = dropInternal(recent24hRaw);
+    let formSubmits12wk = dropInternal(formSubmits12wkRaw);
     const filteredOutCount = (funnelRowsRaw.length - funnelRows.length)
                            + (recent24hRaw.length - recent24h.length)
                            + (formSubmits12wkRaw.length - formSubmits12wk.length);
+
+    // Apply channel filter to event-based aggregations. Jobs + Clients get
+    // filtered separately further down where they're used.
+    if (channel) {
+      funnelRows      = funnelRows.filter(r => eventMatchesChannel(r, channel));
+      recent24h       = recent24h.filter(r => eventMatchesChannel(r, channel));
+      formSubmits12wk = formSubmits12wk.filter(r => eventMatchesChannel(r, channel));
+    }
+    const filteredJobs = channel
+      ? allJobs.filter(j => jobMatchesChannel(j, channel))
+      : allJobs;
+    const filteredColdJobs = channel
+      ? coldJobs.filter(j => jobMatchesChannel(j, channel))
+      : coldJobs;
+    const filteredRecentClients = channel
+      ? (recentClients || []).filter(c => clientMatchesChannel(c, channel))
+      : (recentClients || []);
 
     // ── Funnel events: bucket by curr/prev for top-of-funnel + outreach ─────
     const eventCounts = { curr: {}, prev: {} };
@@ -208,7 +270,7 @@ export default async function handler(req, res) {
     const jobsPrevBooked = [];
     const jobsCurrQuoted = [];
     const jobsPrevQuoted = [];
-    for (const j of allJobs) {
+    for (const j of filteredJobs) {
       const f = j.fields;
       if (inWindow(f["Booking date"], currMs))                        jobsCurrBooked.push(j);
       else if (inPrevWindow(f["Booking date"], prevMs, currMs))       jobsPrevBooked.push(j);
@@ -351,7 +413,7 @@ export default async function handler(req, res) {
     }
 
     // ── Cold leads list ─────────────────────────────────────────────────────
-    const coldLeads = coldJobs
+    const coldLeads = filteredColdJobs
       .map(r => ({
         jobId:      r.fields["Job ID"]          || r.id,
         service:    r.fields["Service type"]    || "(unknown)",
@@ -418,22 +480,34 @@ export default async function handler(req, res) {
     // is, by construction, someone who fired the partial-capture flow in
     // /api/estimate but never hit Submit. We sort newest-first so the most
     // recent abandoners (still warm enough to follow up) are on top.
-    const partialLeads = (recentClients || [])
+    const partialLeads = filteredRecentClients
       .filter(c => {
         const jobs = c.fields["Jobs"];
         return !jobs || (Array.isArray(jobs) && jobs.length === 0);
       })
-      .map(c => ({
-        id:             c.id,
-        name:           c.fields["Full name"] || c.fields["Name"] || "(no name yet)",
-        phone:          c.fields["Phone"] || "",
-        email:          c.fields["Email"] || "",
-        address:        c.fields["Address"] || "",
-        source:         c.fields["Source"] || c.fields["UTM source"] || "",
-        firstContacted: c.fields["First contacted"] || null,
-      }))
+      .map(c => {
+        const utm = (c.fields["UTM source"] || "").toString().toLowerCase().trim();
+        return {
+          id:             c.id,
+          name:           c.fields["Full name"] || c.fields["Name"] || "(no name yet)",
+          phone:          c.fields["Phone"] || "",
+          email:          c.fields["Email"] || "",
+          address:        c.fields["Address"] || "",
+          // Source on Client is always the hardcoded "Website" label (just
+          // means "captured via the WP widget"). UTM source is the actual
+          // marketing channel — surface that as `channel` for the card.
+          source:         c.fields["Source"] || "",
+          utmSource:      utm,
+          channel:        utm || "direct",
+          firstContacted: c.fields["First contacted"] || null,
+        };
+      })
       .sort((a, b) => (a.firstContacted < b.firstContacted ? 1 : a.firstContacted > b.firstContacted ? -1 : 0))
       .slice(0, 30);
+    const partialLeadsCurrCount = partialLeads.length;
+    // Prev-window count for the KPI delta (rough — uses formula filter on phone+contacted)
+    // We didn't fetch prev-window clients separately to keep round-trips low, so this is
+    // approximated as null (no prior comparison shown).
 
     // ── Recent activity (last 24h) ─────────────────────────────────────────
     const recent = recent24h
@@ -453,6 +527,8 @@ export default async function handler(req, res) {
       windowDays: days,
       includeInternal,
       filteredOutCount, // for the dashboard's "N internal events hidden" hint
+      channel,          // currently-applied channel filter (echo back for UI)
+      channels:         Object.entries(CHANNEL_FILTERS).map(([k, v]) => ({ key: k, label: v.label })),
       kpis: {
         // Business (Jobs)
         booked:         { value: bookedCurrCount,  prev: bookedPrevCount,  change: pctChange(bookedCurrCount,  bookedPrevCount)  },
@@ -466,6 +542,8 @@ export default async function handler(req, res) {
         ctaClicks:    evKpi("CTA click"),
         formSubmits:  evKpi("Form submitted"),
         chatEngaged:  evKpi("Chat engaged"),
+        // Partial-form captures — counted as leads even though they didn't submit
+        partialLeads: { value: partialLeadsCurrCount, prev: null, change: null },
         // Outreach + replies
         outreach:     evKpi("Outreach attempt"),
         responses:    evKpi("Customer responded"),
