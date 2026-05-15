@@ -1536,8 +1536,8 @@
   function renderEditForm(j) {
     const opts = (arr, sel) => arr.map(s => `<option value="${escapeHtml(s)}"${s === sel ? " selected" : ""}>${escapeHtml(s || "—")}</option>`).join("");
     const dedup = arr => [...new Set(arr)];
-    const sourceOpts = dedup(["", "Yelp", "Angi", "Google", "Facebook", "Referral", "Phone", "Door-knock", "Repeat", "Other", j.clientSource || ""]);
-    const leadOriginOpts = dedup(["", "Angi", "Yelp", "Google", "Facebook", "Referral", "Phone", "Door-knock", "Repeat", "Other", j.leadOrigin || ""]);
+    const sourceOpts = dedup(["", "Yelp", "Angi", "Google", "Facebook", "Referral", "Door-knock", "Repeat", "Other", j.clientSource || ""]);
+    const leadOriginOpts = dedup(["", "Angi", "Yelp", "Google", "Facebook", "Referral", "Door-knock", "Repeat", "Other", j.leadOrigin || ""]);
     return `
       <div class="section-header">Job <span class="hint">${j.createDate ? "created " + escapeHtml(fmtDate(j.createDate)) : ""}</span></div>
 
@@ -2177,7 +2177,7 @@
   function renderNewJobBody() {
     const c = newjobSelectedClient;
     const stageOptions = ["🆕 New lead", "💬 Quoted", "📞 Contacted", "📅 Booked"];
-    const originOptions = ["", "Repeat", "Referral", "Yelp", "Angi", "Google", "Facebook", "Phone", "Door-knock", "Other"];
+    const originOptions = ["", "Repeat", "Referral", "Yelp", "Angi", "Google", "Facebook", "Door-knock", "Other"];
     newjobBody.innerHTML = `
       <div class="section-header">Client <span class="hint">${c ? "existing client" : "pick one"}</span></div>
       ${c ? `
