@@ -498,15 +498,13 @@ async function handleBackfillToDone(req, res) {
       dryRun: true,
       wouldUpdate: records.length,
       bucket: buckets,
-      sample: records.slice(0, 5).map(r => ({
+      sample: records.slice(0, 20).map(r => ({
         id: r.id,
-        jobIdRaw: JSON.stringify(r.fields["Job ID"]),
-        jobIdLen: (r.fields["Job ID"] || "").length,
-        jobIdCharCodes: [...(r.fields["Job ID"] || "")].slice(0, 8).map(c => c.charCodeAt(0)),
-        completionRaw: JSON.stringify(r.fields["Completion date"]),
-        createDateRaw: JSON.stringify(r.fields["Create date"]),
+        jobId: r.fields["Job ID"] || "",
+        currentStage: r.fields["Pipeline stage"] || "(none)",
+        createDate: r.fields["Create date"] || "",
+        completionDate: r.fields["Completion date"] || "",
         proxyCompletion: completionProxy(r),
-        allFields: Object.keys(r.fields),
       })),
     });
   }
