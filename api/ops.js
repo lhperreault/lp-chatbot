@@ -618,6 +618,73 @@ async function handleSetupTrackingFields(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: event-origins — diagnostic. Groups Funnel events over the last
+// N days by country, UTM source, referrer domain, and internal flag so
+// Luke can audit where his "775 page views" really came from.
+//
+//   GET /api/ops?action=event-origins&days=7&type=Page%20view
+// ═══════════════════════════════════════════════════════════════════════
+
+async function handleEventOrigins(req, res) {
+  const days = Math.max(1, Math.min(180, parseInt(req.query?.days || "7", 10) || 7));
+  const evType = (req.query?.type || "Page view").toString();
+  const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
+
+  const safeType = evType.replace(/'/g, "\\'");
+  const formula = `AND({Event type}='${safeType}', IS_AFTER({Timestamp}, DATETIME_PARSE('${cutoff}')))`;
+  const records = await airtableGet(AT_FUNNEL, {
+    filterByFormula: formula,
+    "fields[]": ["Timestamp", "Event type", "UTM source", "UTM campaign", "Referrer", "Landing URL", "Session ID", "Country", "Internal", "Notes"],
+  });
+
+  const byCountry  = {};
+  const bySource   = {};
+  const byReferrer = {};
+  const byUtmMedium = {};
+  let internalTrue = 0;
+  let countryBlank = 0;
+  const sessions = new Set();
+  const latestSampleByCountry = {};
+
+  for (const r of records) {
+    const f = r.fields || {};
+    const country = (f["Country"] || "").trim();
+    const cKey    = country || "(blank — pre-fix data)";
+    const source  = f["UTM source"] || "(no UTM source)";
+    const ref     = ((f["Referrer"] || "").replace(/^https?:\/\//, "").split(/[/?#]/)[0]) || "(no referrer)";
+
+    byCountry[cKey]   = (byCountry[cKey]   || 0) + 1;
+    bySource[source]  = (bySource[source]  || 0) + 1;
+    byReferrer[ref]   = (byReferrer[ref]   || 0) + 1;
+    if (f["Internal"] === true) internalTrue++;
+    if (!country) countryBlank++;
+    if (f["Session ID"]) sessions.add(f["Session ID"]);
+    if (country && !latestSampleByCountry[country]) {
+      latestSampleByCountry[country] = {
+        timestamp: f["Timestamp"], source, referrer: ref,
+        landingUrl: (f["Landing URL"] || "").slice(0, 120),
+      };
+    }
+  }
+
+  const sortTop = (obj, n = 20) =>
+    Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ key: k, count: v }));
+
+  return res.status(200).json({
+    days,
+    eventType: evType,
+    total: records.length,
+    uniqueSessions: sessions.size,
+    internalFlagged: internalTrue,
+    countryBlank,
+    byCountry:  sortTop(byCountry),
+    bySource:   sortTop(bySource),
+    byReferrer: sortTop(byReferrer, 25),
+    latestPerCountry: latestSampleByCountry,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1572,6 +1639,7 @@ export default async function handler(req, res) {
       case "create-job":     return await handleCreateJob(req, res);
       case "backfill-2025-to-done":   return await handleBackfillToDone(req, res);
       case "setup-tracking-fields":   return await handleSetupTrackingFields(req, res);
+      case "event-origins":           return await handleEventOrigins(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);
