@@ -23,7 +23,7 @@ const AT_CLIENTS = "Clients";
 // dashboard still buckets legacy records sensibly while you reclassify.
 const CHANNEL_GROUPS = {
   marketing: ["Website", "Meta ads", "Yelp", "Google", "Angi", "Website chatbot"],
-  organic:   ["Referral", "Repeat", "Yard sign / truck", "Door Knocking", "In person"],
+  organic:   ["Referral", "Repeat", "Yard sign / truck", "Door Knocking", "In person", "Manual", "Phone call"],
 };
 
 // Channel filter mapping — unifies the different naming conventions used
