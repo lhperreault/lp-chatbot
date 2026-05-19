@@ -227,6 +227,55 @@
     flex-wrap: wrap; align-items: center;
   }
 
+  /* ── Conversation transcript (chatbot log on edit modal) ─────────────── */
+  .convo-toggle {
+    background: var(--bg-soft); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 9px 12px; font-size: 13px; font-weight: 500;
+    width: 100%; text-align: left; cursor: pointer;
+    font-family: inherit;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .convo-toggle:hover { background: var(--bg-hover); }
+  .convo-toggle .count { color: var(--text-2); font-size: 12px; font-weight: 400; }
+  .convo-body {
+    margin-top: 8px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    max-height: 50vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .convo-body.collapsed { display: none; }
+  .convo-msg {
+    padding: 8px 12px; border-radius: 10px;
+    font-size: 13px; line-height: 1.45;
+    word-wrap: break-word; white-space: pre-wrap;
+    max-width: 92%;
+  }
+  .convo-msg.assistant {
+    align-self: flex-start;
+    background: #fff; border: 1px solid var(--border);
+    color: var(--text);
+    border-bottom-left-radius: 4px;
+  }
+  .convo-msg.user {
+    align-self: flex-end;
+    background: var(--accent); color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .convo-msg.system {
+    align-self: center; max-width: 95%;
+    background: rgba(217,153,12,0.10); color: #876012;
+    border: 1px solid rgba(217,153,12,0.25);
+    font-size: 11px;
+  }
+  .convo-empty {
+    color: var(--text-3); font-size: 13px;
+    text-align: center; padding: 18px;
+  }
+
   /* ── Notes preview on Contacted / Lost cards ─────────────────────────── */
   .card-notes {
     margin-top: 8px; padding-top: 8px;
@@ -1444,6 +1493,22 @@
       el.addEventListener("change", markDirty);
     });
 
+    // Conversation transcript toggle
+    const convoToggle = sheetBody.querySelector("#convo-toggle");
+    const convoBody   = sheetBody.querySelector("#convo-body");
+    if (convoToggle && convoBody) {
+      convoToggle.addEventListener("click", () => {
+        const collapsed = convoBody.classList.toggle("collapsed");
+        convoToggle.querySelector("span:first-child").textContent =
+          collapsed ? "Show full transcript" : "Hide transcript";
+        if (!collapsed) {
+          // Scroll the transcript into view so Luke can start reading
+          convoBody.scrollTop = 0;
+          convoBody.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      });
+    }
+
     // Wire up the two-step delete button
     const deleteBtn = sheetBody.querySelector("#job-delete-btn");
     if (deleteBtn) {
@@ -1657,9 +1722,42 @@
         </div>
       `}
 
+      ${renderConversationSection(j)}
+
       <div class="delete-zone">
         <button type="button" class="delete-btn" id="job-delete-btn">Delete this job</button>
       </div>
+    `;
+  }
+
+  // Parse the Job's "Conversation log" (JSON string of [{role, content}])
+  // and render as a chat-style transcript. Collapsible: shows a toggle
+  // button by default, body hidden. Section is omitted if no log exists.
+  function renderConversationSection(j) {
+    const raw = (j.conversationLog || "").trim();
+    if (!raw) return "";
+    let messages = [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) messages = parsed;
+    } catch {
+      // Not JSON — fall back to displaying the raw string as one message
+      messages = [{ role: "system", content: raw }];
+    }
+    if (!messages.length) return "";
+    const msgsHtml = messages.map(m => {
+      const role = (m.role || "system").toString();
+      const cls = role === "assistant" ? "assistant" : role === "user" ? "user" : "system";
+      const content = String(m.content == null ? "" : (typeof m.content === "string" ? m.content : JSON.stringify(m.content)));
+      return `<div class="convo-msg ${cls}">${escapeHtml(content)}</div>`;
+    }).join("");
+    return `
+      <div class="section-header">Chatbot conversation <span class="hint">${messages.length} message${messages.length === 1 ? "" : "s"}</span></div>
+      <button type="button" class="convo-toggle" id="convo-toggle">
+        <span>Show full transcript</span>
+        <span class="count">${messages.length} msg${messages.length === 1 ? "" : "s"}</span>
+      </button>
+      <div class="convo-body collapsed" id="convo-body">${msgsHtml}</div>
     `;
   }
 
@@ -2368,8 +2466,33 @@
   });
 
   // ── Boot ─────────────────────────────────────────────────────────────
-  load();
-  setupAutoRefresh();
+  (async () => {
+    await load();
+    setupAutoRefresh();
+
+    // Deep-link support: ?open=recXXX in the URL (used by Telegram
+    // notifyLead/notifyQuote pings) opens that job's edit modal on
+    // page load. If the job isn't in the current view, fall back to
+    // "all" so it's findable.
+    const openId = qs.get("open");
+    if (openId && /^rec[A-Za-z0-9]{14}$/.test(openId)) {
+      if (!findJob(openId) && currentView !== "all") {
+        currentView = "all";
+        localStorage.setItem("lp_ops_view", currentView);
+        setActiveView(currentView);
+        await load({ preservePosition: false });
+      }
+      if (findJob(openId)) {
+        setTimeout(() => openEditModal(openId), 250);
+      }
+      // Strip ?open= from the URL so a refresh doesn't keep re-opening
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete("open");
+        history.replaceState(null, "", u.toString());
+      } catch {}
+    }
+  })();
 </script>
 
 </body>

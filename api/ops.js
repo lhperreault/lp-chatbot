@@ -109,7 +109,7 @@ const JOB_FIELDS_FOR_VIEW = [
   "Quote amount", "Quote date", "Booking date", "Completion date",
   "Lead status", "Concerns", "Lead origin", "Pipeline stage",
   "Last touch", "Notes from Luke", "Outreach attempts",
-  "Customer responded", "Create date",
+  "Customer responded", "Create date", "Conversation log",
 ];
 
 async function handleData(req, res) {
@@ -189,6 +189,7 @@ async function handleData(req, res) {
       customerResponded:f["Customer responded"]|| null,
       createDate:       f["Create date"]       || null,
       concerns:         f["Concerns"]          || "",
+      conversationLog:  f["Conversation log"]  || "",
     };
   });
 

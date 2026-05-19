@@ -46,6 +46,18 @@ const CONVO_CHANNEL          = "Website chatbot";  // Conversations.Channel — 
 // uses in Airtable. Must match the strings in the "Lead origin" /
 // "Source" single-select fields (and the dashboard's CHANNEL_FILTERS
 // map). Anything we can't classify confidently falls back to "Website".
+// Build a deep-link URL to the Kanban card so Telegram pings can take Luke
+// straight to the job in one tap. The DASHBOARD_KEY env var is the access
+// gate; it gets stitched into the URL so the page opens without prompting.
+function opsCardLink(jobId) {
+  if (!jobId) return null;
+  const base = process.env.OPS_BASE_URL || "https://chatbot-t1bk.vercel.app";
+  const key  = process.env.DASHBOARD_KEY || "";
+  const qs = new URLSearchParams({ open: jobId });
+  if (key) qs.set("key", key);
+  return `${base}/ops.html?${qs.toString()}`;
+}
+
 function deriveOriginFromAttribution(attr) {
   if (!attr) return LEAD_ORIGIN_DEFAULT;
   const utm = (attr.utm_source || "").toString().toLowerCase().trim();
@@ -667,6 +679,13 @@ async function notifyQuote(state, formData, messages) {
       msgParts.push(`<pre>${htmlEscape(transcript)}</pre>`);
     }
 
+    // Deep link to the Kanban card so Luke can open the lead in one tap.
+    const cardLink = opsCardLink(state?.jobId);
+    if (cardLink) {
+      msgParts.push("");
+      msgParts.push(`🔗 <a href="${cardLink}">Open in Ops →</a>`);
+    }
+
     await sendTelegramAlertWithAudit({
       type:       "Quote sent",
       text:       msgParts.join("\n"),
@@ -735,6 +754,8 @@ async function notifyLead(formData, attribution, ctx = {}) {
       `🌱 Condition: ${htmlEscape(condition)}`,
     ];
     if (notes) parts.push(`📝 Notes: <i>${htmlEscape(notes)}</i>`);
+    const cardLink = opsCardLink(ctx.jobId);
+    if (cardLink) parts.push(`\n🔗 <a href="${cardLink}">Open in Ops →</a>`);
     parts.push("");
     parts.push(`<i>Chat starting now. You'll get a follow-up ping with the full quote + draft text if they engage. If they go quiet for 3 min mid-chat you'll get a 🕒 stale ping with the partial transcript.</i>`);
 
@@ -1327,17 +1348,13 @@ export default async function handler(req, res) {
       }, state.clientId).catch(err => console.error("[upsertClient property persist from RentCast] error:", err));
     }
 
-    // Ping Telegram the moment someone completes the form. Fires on every
-    // first-turn submission (not gated on isNew) so that a partial capture
-    // followed by a full submission still produces the 📥 "submitted" ping.
-    // Worst case if a customer resubmits: Luke gets two 📥 pings — that's
-    // fine, the second one means "this person came back."
-    notifyLead(formData, attribution, { sessionId, clientId: state.clientId, jobId: state.jobId }).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
     logFunnelEvent({ eventType: "Form submitted", attribution, sessionId, clientId: state.clientId }).catch(() => {});
 
     // Create a STUB Job in "🆕 New lead" stage so leads who bail mid-chat
     // (or never engage) still appear in Luke's Kanban CRM. The first call
     // to save_quote_job will UPGRADE this stub instead of duplicating it.
+    // We do this BEFORE notifyLead now so the Telegram ping can include a
+    // deep link to the Kanban card.
     if (state.clientId && !state.jobId) {
       const services = Array.isArray(formData.services) && formData.services.length
         ? formData.services.join(", ")
@@ -1361,6 +1378,13 @@ export default async function handler(req, res) {
         console.error("[estimate] stub job threw:", err);
       }
     }
+
+    // Ping Telegram the moment someone completes the form. Fires on every
+    // first-turn submission (not gated on isNew) so that a partial capture
+    // followed by a full submission still produces the 📥 "submitted" ping.
+    // Now passes jobId (set by the stub creation above) so the ping can
+    // include a deep link to the Kanban card.
+    notifyLead(formData, attribution, { sessionId, clientId: state.clientId, jobId: state.jobId }).catch(err => console.error("[notifyLead] fire-and-forget error:", err));
   } else if (messages.filter(m => m.role === "user").length === 1) {
     // First customer reply after the bot's greeting → chat is engaged.
     logFunnelEvent({ eventType: "Chat engaged", attribution, sessionId, clientId: state.clientId, jobId: state.jobId }).catch(() => {});
