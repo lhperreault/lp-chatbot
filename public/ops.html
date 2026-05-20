@@ -367,6 +367,55 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── Address row on card (Google Maps + Zillow deep links) ──────────── */
+  .card-address {
+    margin-top: 6px;
+    display: flex; gap: 6px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .card-address .addr-link {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--bg-soft);
+    color: var(--accent-text);
+    text-decoration: none;
+    font-size: 12px; font-weight: 500;
+    padding: 5px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: inline-flex; align-items: center; gap: 5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background 100ms;
+  }
+  .card-address .addr-link:hover { background: var(--bg-hover); }
+  .card-address .zillow-link {
+    flex: 0 0 auto;
+    background: rgba(0,107,107,0.10);
+    color: #036e84;
+    text-decoration: none;
+    font-size: 12px; font-weight: 600;
+    padding: 5px 9px;
+    border-radius: 6px;
+    border: 1px solid rgba(0,107,107,0.25);
+    transition: background 100ms;
+  }
+  .card-address .zillow-link:hover { background: rgba(0,107,107,0.18); }
+
+  /* Maps/Zillow icon buttons next to the Address input in the edit modal */
+  .field-with-links {
+    display: flex; gap: 6px; align-items: stretch;
+  }
+  .field-with-links input { flex: 1 1 auto; min-width: 0; }
+  .field-with-links a {
+    flex: 0 0 auto;
+    background: var(--bg-soft); color: var(--accent-text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0 10px; font-size: 12px; font-weight: 500;
+    text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    white-space: nowrap;
+  }
+  .field-with-links a:hover { background: var(--bg-hover); }
+
   /* ── "Tried contacting them" inline card button ─────────────────────── */
   .tried-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -1156,6 +1205,18 @@
     if (d.length === 11) return `+${d}`;
     return d ? `+${d}` : "";
   }
+  // Build Google Maps + Zillow URLs for a property address. Both accept
+  // free-form addresses via search-style queries — works whether the
+  // address is canonical or just "123 Main St, Quakertown PA". Empty
+  // address returns empty strings (callers must check).
+  function googleMapsUrl(addr) {
+    if (!addr) return "";
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+  }
+  function zillowUrl(addr) {
+    if (!addr) return "";
+    return `https://www.zillow.com/homes/${encodeURIComponent(addr)}_rb/`;
+  }
 
   // ── View-picker ──────────────────────────────────────────────────────
   function setActiveView(v) {
@@ -1341,6 +1402,10 @@
         openDraftsSheet(btn.dataset.drafts);
       });
     });
+    // Address / Zillow links — open in new tab, don't bubble to card click
+    trackEl.querySelectorAll("[data-addr-link]").forEach(a => {
+      a.addEventListener("click", (e) => { e.stopPropagation(); });
+    });
 
     // Jump to the preserved column WITHOUT smooth-scroll (instant restoration)
     if (targetIdx > 0) {
@@ -1407,6 +1472,9 @@
         e.stopPropagation();
         handleTriedClick(btn);
       });
+    });
+    main.querySelectorAll("[data-addr-link]").forEach(a => {
+      a.addEventListener("click", (e) => { e.stopPropagation(); });
     });
   }
 
@@ -1502,6 +1570,25 @@
     if (j.outreachAttempts > 0) pills.push(`<span class="pill outreach">${j.outreachAttempts}× outreach</span>`);
     if (j.customerResponded) pills.push(`<span class="pill responded">replied</span>`);
 
+    // Address row with Google Maps + Zillow deep links. Shown on any card
+    // that has a client address — saves Luke a copy/paste when scoping
+    // the job or navigating to it.
+    let addressRow = "";
+    if (j.clientAddress) {
+      const mapsUrl = googleMapsUrl(j.clientAddress);
+      const zUrl    = zillowUrl(j.clientAddress);
+      addressRow = `
+        <div class="card-address">
+          <a href="${mapsUrl}" target="_blank" rel="noopener" class="addr-link" data-addr-link="1" title="Open in Google Maps">
+            📍 ${escapeHtml(j.clientAddress)}
+          </a>
+          <a href="${zUrl}" target="_blank" rel="noopener" class="zillow-link" data-addr-link="1" title="Open in Zillow">
+            🏠 Zillow
+          </a>
+        </div>
+      `;
+    }
+
     // "✉️ Draft texts" button — only on New lead cards. Opens a sheet with
     // 3 AI-generated first-text-message options in Luke's voice.
     let draftsRow = "";
@@ -1555,6 +1642,7 @@
           ${j.quoteAmount ? `<div class="card-amount">${escapeHtml(fmtMoney(j.quoteAmount))}</div>` : ""}
         </div>
         ${meta.length ? `<div class="card-meta">${meta.join(`<span class="sep">·</span>`)}</div>` : ""}
+        ${addressRow}
         ${pills.length ? `<div class="card-bottom">${pills.join("")}</div>` : ""}
         ${notesBlock}
         ${draftsRow}
@@ -1823,7 +1911,13 @@
 
         <div class="field">
           <label>Address</label>
-          <input name="client:Address" type="text" value="${escapeHtml(j.clientAddress || "")}" />
+          <div class="field-with-links">
+            <input name="client:Address" type="text" value="${escapeHtml(j.clientAddress || "")}" />
+            ${j.clientAddress ? `
+              <a href="${googleMapsUrl(j.clientAddress)}" target="_blank" rel="noopener" title="Open in Google Maps">📍 Maps</a>
+              <a href="${zillowUrl(j.clientAddress)}" target="_blank" rel="noopener" title="Open in Zillow">🏠 Zillow</a>
+            ` : ""}
+          </div>
         </div>
 
         <div class="field-row">
