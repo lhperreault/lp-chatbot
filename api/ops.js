@@ -1053,6 +1053,262 @@ async function handleLogOutreach(req, res) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Action: draft-messages — generate 3 first-text-message drafts for a
+// New-lead Job, in Luke's voice, based on the Job's context (client,
+// services, conversation log if any, attribution).
+//
+//   POST /api/ops?action=draft-messages   body: { jobId }
+//   → { drafts: [ { label, text }, ... ] }
+//
+// Only intended for use on Jobs in "🆕 New lead" stage — the UI gates the
+// button so this endpoint is rarely (if ever) called on later stages.
+// ═══════════════════════════════════════════════════════════════════════
+
+const DRAFT_VOICE_PROMPT = `You are drafting outbound text messages for Luke Perreault, owner of LP Pressure Washing (Bucks/Montgomery/Lehigh counties, PA). This is the FIRST text to a new lead. Luke prefers calling first but sometimes needs to text.
+
+VOICE RULES (non-negotiable):
+- Warm, casual, neighborly, confident. Solo-operator vibe — not corporate.
+- NO emojis, NO markdown, NO bullet points, NO bold/italic in the message text. Plain text only.
+- Day-of-week always paired with dates ("Friday, May 22nd" not "May 22nd").
+- Single final dollar amount per line. Never reveal internal math or pre-discount totals.
+- If first contact / formal: open with "Hi [Name], This is Luke Perreault from LP Pressure Washing." or "This is Luke from LP Pressure Washing."
+- Reference how they got in touch when relevant ("Glad we could speak earlier today", "Thanks for clicking on our ad", "I saw you left a voicemail", "I got your contact info from Angi").
+- Close: "Let me know if you have any questions," then sign "Luke" or "Luke / LP Pressure Washing".
+
+EXAMPLES of Luke's voice (study these carefully — they are the gold standard for tone, structure, and word choice):
+
+EXAMPLE 1 (full quote with multiple services, Memorial Day Special):
+Hi Mike, This is Luke from LP Pressure Washing. Glad we could speak earlier today.
+
+Here is the estimate below for the house and windows:
+
+House wash: which includes everything from the outsides of the gutters, soffits, siding, windows, doors we can do for $570
+
+Windows (exterior): $182 (Memorial Day Special 30% off when paired with house wash)
+
+Total: $752
+
+We use a soft wash system that's low pressure cleaning which is much safer on your siding and landscaping than traditional pressure washing. We pair it with a safe bleach-based soap that kills mold, mildew, and algae without damaging your plants or home (wide soap to water ratio). We make sure to water down any plants before and after to protect them.
+
+I have availability on June 5th or 9th. If you really need it sooner, I could also fit you in on May 25th (Memorial Day). Let me know what works best for you.
+
+If you'd like anything else done, walkway, concrete around the pool, etc. just let me know and I can give you an estimate.
+
+Let me know if you have any questions.
+
+Luke / LP Pressure Washing
+
+EXAMPLE 2 (small partial-wash quote):
+Hi Anthony, This is Luke from LP Pressure Washing. Nice talking with you earlier.
+
+For the 2ish sides of your house, I can get that soft washed for $210. We use the soft wash system that's low pressure cleaning which is much safer on your siding and landscaping than traditional pressure washing.
+
+The windows get washed during the process but they don't dry perfectly spotless as if professionally cleaned. But they look great.
+
+We can do it the 28th or June 2nd.
+
+Let me know if you have any questions.
+
+EXAMPLE 3 (pool patio + fence with caveat about pool):
+Hi Dominic, This is Luke from LP Pressure Wash. Nice talking with you earlier.
+
+For your pool patio and white fence in Perkasie, I can get that done for $360 total. The patio is $210 and the fence around it is $150.
+
+Quick heads up on the pool — we'll do our best to spray away from it and keep the water and small sand particles out, but it's typically pretty inevitable that some gets in. Just wanted to set that expectation up front.
+
+I could do it the 5th or 9th of June. If you wanted it before we could fit it in if necessary.
+
+Let me know if you have any questions.
+
+EXAMPLE 4 (intro after ad click — quote coming, asking for timeline):
+Hi Susan,
+
+This is Luke Perreault from LP Pressure Washing. Thanks for clicking on our ad.
+
+I see you're interested in the house and the inside of the backyard wooden fence.
+
+I'll take a look at it now and send over an exact estimate. When are you wanting this done ideally?
+
+EXAMPLE 5 (voicemail follow-up):
+Hi Shiva,
+This is Luke from LP pressure washing. I saw you left a voicemail the other day and I just left one on your answering machine. We are starting cleaning homes in May. If you want to get an estimate now and schedule something for then that would be perfect? Let me know what you think. Have a nice weekend.
+
+EXAMPLE 6 (clarification after voicemail, asking discovery questions):
+Hi Sharon,
+
+This is Luke Perreault from LP Pressure Washing. Thank for clicking on our ad.
+
+I left a voicemail but I just wanted to confirm your looking for the house including outsides of gutters, deck, then the patio below the deck?
+
+Is the deck trex, composite?
+
+EXAMPLE 7 (post-visit full estimate with soft-wash explainer, windows note, single date proposal):
+Hi Regina,
+
+It's Luke Perreault from LP Pressure Washing. It was nice talking to you earlier and I took a look at your house.
+
+Here is the estimate broken down.
+
+Here's what we can do for you:
+
+To wash your house including all sides, up to peaks, outside of gutters, soffits, windows, doors and garage door we can do for $330. (You can decide if you want the whole thing done later if you want)
+
+For the back patio we can do for $130 (normally $180 but we discount when doing both the house and patio together).
+
+So it would be $460 total.
+
+We use the soft wash system—that's low pressure cleaning—which is much safer on your siding and landscaping than traditional pressure washing. We pair it with a safe bleach-based soap that kills mold, mildew, and algae without damaging your plants or home. We make sure to water down any plants before and after to protect them.
+
+The windows get washed during the process but they don't dry perfectly spotless as if professionally cleaned. But they look great.
+
+How would the Saturday the 16th work?
+
+Let me know if you have any questions,
+
+EXAMPLE 8 (Angi lead, voicemail full, discovery question):
+Hi Adam,
+
+This is Luke Perreault from LP Pressure Washing. I got your contact info from Angi. I just called and you was going to leave a voicemail but your inbox is full.
+
+I see your wanting your siding washed. Do you want all 4 sides minus the brick?
+
+Feel free to respond here or give me a call,
+
+EXAMPLE 9 (driveway, asking scope question + timeline):
+Hi David,
+
+This is Luke Perreault from LP Pressure Washing. I see that you're wanting your 22 by 18 driveway pressure washed. We can for sure help with that.
+
+I was looking online and see that would be like 2/3rds of the full 3 lot driveway pretty much. Would you also want the sidewalk of your property and the walkway to your front door included?
+
+It would affect the price ever so slightly.
+Also when are you ideally wanting this done?
+
+Luke,
+
+PRICING / CONTEXT (use when generating drafts):
+- House wash (4 sides, up to peaks, outsides of gutters, soffits, windows, doors): $330–$570 depending on size/stories
+- Driveway: $130–$210 depending on size
+- Deck: $130–$210 (often discounted when paired with house)
+- Patio: $130–$210
+- Windows (exterior, separate): $182 (Memorial Day Special 30% off when paired with house wash, active through May 31, 2026)
+- Soft wash system explainer (only include when relevant — house wash, deck, fence): "We use the soft wash system that's low pressure cleaning which is much safer on your siding and landscaping than traditional pressure washing."
+- Windows note (only when house wash includes windows): "The windows get washed during the process but they don't dry perfectly spotless as if professionally cleaned. But they look great."
+- Pool warning (only when there's a pool): "Quick heads up on the pool — we'll do our best to spray away from it and keep the water and small sand particles out, but it's typically pretty inevitable that some gets in."
+
+OUTPUT FORMAT — return STRICT JSON only, no preamble, no markdown:
+{
+  "drafts": [
+    { "label": "Discovery — confirm scope before quoting", "text": "Hi [Name],..." },
+    { "label": "Quote-ready estimate", "text": "Hi [Name],..." },
+    { "label": "Voicemail follow-up", "text": "Hi [Name],..." }
+  ]
+}
+
+The three drafts should be DIFFERENT angles — pick the 3 most appropriate to the available context. If we have detailed services + scope but no quote yet, lean into Quote-ready. If we have only a name and partial info, lean into Discovery. If they came via voicemail or didn't pick up, do the Voicemail follow-up. Each draft should be self-contained and immediately sendable — no placeholders, no [brackets]. Use the customer's actual first name from the context. Today's date: ${todayISO()}.`;
+
+async function handleDraftMessages(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "Anthropic API key not configured" });
+  const { jobId } = req.body || {};
+  if (!jobId || !/^rec[A-Za-z0-9]{14}$/.test(jobId)) {
+    return res.status(400).json({ error: "invalid jobId" });
+  }
+
+  // Fetch the Job + linked Client (parallel)
+  const jobRes = await fetch(`${airtableUrl(AT_JOBS)}/${jobId}`, { headers: airtableHeaders() });
+  const job = await jobRes.json();
+  if (job.error) return res.status(400).json({ error: job.error.message });
+  const linkedClientId = (job.fields["Client"] || [])[0];
+  let client = null;
+  if (linkedClientId) {
+    const cr = await fetch(`${airtableUrl(AT_CLIENTS)}/${linkedClientId}`, { headers: airtableHeaders() });
+    const cd = await cr.json();
+    if (!cd.error) client = cd;
+  }
+
+  // Parse the conversation log if present so we can give the AI a clean
+  // transcript instead of raw JSON.
+  let convoTranscript = "";
+  const rawConvo = (job.fields["Conversation log"] || "").trim();
+  if (rawConvo) {
+    try {
+      const parsed = JSON.parse(rawConvo);
+      if (Array.isArray(parsed)) {
+        convoTranscript = parsed.map(m => {
+          const role = m.role === "assistant" ? "Bot" : m.role === "user" ? "Customer" : (m.role || "System");
+          const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+          return `${role}: ${content}`;
+        }).join("\n");
+      }
+    } catch {}
+  }
+
+  // Build context for the AI
+  const ctxLines = [
+    `JOB CONTEXT:`,
+    `Job ID: ${job.fields["Job ID"] || "(unset)"}`,
+    `Service type: ${job.fields["Service type"] || "(not specified)"}`,
+    `Property snapshot: ${job.fields["Property snapshot"] || "(not provided)"}`,
+    `Pipeline stage: ${job.fields["Pipeline stage"] || "(unset)"}`,
+    `Lead origin: ${job.fields["Lead origin"] || "(unset)"}`,
+    `Existing quote text: ${job.fields["Quote"] || "(none yet)"}`,
+    `Existing quote amount: ${job.fields["Quote amount"] != null ? "$" + job.fields["Quote amount"] : "(none yet)"}`,
+    `Concerns / notes: ${job.fields["Concerns"] || job.fields["Notes from Luke"] || "(none)"}`,
+    "",
+    `CLIENT CONTEXT:`,
+    client ? `Name: ${client.fields["Full name"] || client.fields["Name"] || "(unknown)"}` : "Name: (no linked client)",
+    client?.fields?.["Phone"] ? `Phone: ${client.fields["Phone"]}` : null,
+    client?.fields?.["Email"] ? `Email: ${client.fields["Email"]}` : null,
+    client?.fields?.["Address"] ? `Address: ${client.fields["Address"]}` : null,
+    client?.fields?.["Source"] ? `Source / channel: ${client.fields["Source"]}` : null,
+    client?.fields?.["UTM source"] ? `UTM source: ${client.fields["UTM source"]}` : null,
+    client?.fields?.["Sqft"] ? `Sqft (estimated): ${client.fields["Sqft"]}` : null,
+    client?.fields?.["Stories"] ? `Stories: ${client.fields["Stories"]}` : null,
+    client?.fields?.["Material"] ? `Material: ${client.fields["Material"]}` : null,
+    "",
+    convoTranscript ? `CHATBOT CONVERSATION (most recent on bottom):` : "CHATBOT CONVERSATION: (none — they didn't engage the chatbot)",
+    convoTranscript,
+  ].filter(Boolean).join("\n");
+
+  // One-shot Anthropic call to generate the drafts
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const anthropic = new Anthropic();
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5",
+    max_tokens: 2500,
+    system: [
+      { type: "text", text: DRAFT_VOICE_PROMPT, cache_control: { type: "ephemeral" } },
+    ],
+    messages: [
+      { role: "user", content: `Generate the 3 drafts based on this context. Return STRICT JSON only.\n\n${ctxLines}` },
+    ],
+  });
+
+  const rawReply = response.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+  // Strip any code fences the model might add even when told not to
+  const jsonText = rawReply.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (err) {
+    console.error("[draft-messages] JSON parse failed:", err, "raw:", rawReply.slice(0, 500));
+    return res.status(500).json({ error: "AI returned invalid JSON", raw: rawReply.slice(0, 800) });
+  }
+  const drafts = Array.isArray(parsed?.drafts) ? parsed.drafts.slice(0, 3) : [];
+  if (!drafts.length) {
+    return res.status(500).json({ error: "AI returned no drafts", raw: rawReply.slice(0, 500) });
+  }
+
+  return res.status(200).json({
+    drafts,
+    usage: response.usage,
+    clientPhone: client?.fields?.["Phone"] || "",
+    clientName:  client?.fields?.["Full name"] || client?.fields?.["Name"] || "",
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Action: delete — DELETE a Job (called from the Kanban modal's two-step button)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -2031,6 +2287,7 @@ export default async function handler(req, res) {
       case "telegram-audit":          return await handleTelegramAudit(req, res);
       case "backfill-attribution":    return await handleBackfillAttribution(req, res);
       case "log-outreach":            return await handleLogOutreach(req, res);
+      case "draft-messages":          return await handleDraftMessages(req, res);
       case "delete":         return await handleDelete(req, res);
       case "chat":           return await handleChat(req, res);
       case "ingest-lead":    return await handleIngestLead(req, res);

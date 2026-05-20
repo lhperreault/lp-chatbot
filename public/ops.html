@@ -292,6 +292,81 @@
   }
   .card-notes em { font-style: italic; color: var(--text-3); }
 
+  /* ── "Draft texts" button + sheet (New lead cards only) ─────────────── */
+  .drafts-btn {
+    background: var(--accent-soft); color: var(--accent-text);
+    border: 1px solid rgba(35,131,226,0.30); border-radius: 6px;
+    padding: 5px 10px; font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: background 100ms, border-color 100ms;
+  }
+  .drafts-btn:hover { background: rgba(35,131,226,0.18); border-color: rgba(35,131,226,0.45); }
+  .drafts-btn:disabled { opacity: 0.5; cursor: progress; }
+  .drafts-row {
+    display: flex; justify-content: flex-end;
+    margin-top: 6px;
+  }
+
+  /* Drafts sheet — uses the existing .modal-sheet shell, just custom body */
+  .draft-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  .draft-card .label {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--accent-text);
+    margin-bottom: 8px;
+  }
+  .draft-card .text {
+    font-size: 14px; line-height: 1.5;
+    color: var(--text);
+    white-space: pre-wrap; word-break: break-word;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    max-height: 320px; overflow-y: auto;
+  }
+  .draft-card .actions {
+    display: flex; gap: 8px; margin-top: 10px;
+  }
+  .draft-card .actions button,
+  .draft-card .actions a {
+    flex: 1;
+    background: #fff; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 9px; font-size: 13px; font-weight: 500;
+    cursor: pointer; text-align: center; text-decoration: none;
+    font-family: inherit;
+    transition: background 100ms;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px;
+  }
+  .draft-card .actions button:hover,
+  .draft-card .actions a:hover { background: var(--bg-soft); }
+  .draft-card .actions .send-sms {
+    background: var(--accent); color: #fff;
+    border-color: var(--accent);
+  }
+  .draft-card .actions .send-sms:hover { background: #1a64b8; }
+  .draft-card .actions .copied { background: rgba(0,135,107,0.16); color: #0d6b53; border-color: rgba(0,135,107,0.30); }
+  #drafts-loading {
+    text-align: center; padding: 36px 18px;
+    color: var(--text-2); font-size: 14px;
+  }
+  #drafts-loading .spinner {
+    display: inline-block; width: 18px; height: 18px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    margin-right: 10px; vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* ── "Tried contacting them" inline card button ─────────────────────── */
   .tried-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -915,6 +990,21 @@
   </div>
 </div>
 
+<!-- Drafts sheet — first-text-message options for New lead cards -->
+<div class="modal-backdrop" id="drafts-backdrop"></div>
+<div class="modal-sheet" id="drafts-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="title" id="drafts-title">Draft first text</div>
+    <div class="sub" id="drafts-sub">3 options based on this lead's context</div>
+  </div>
+  <div class="sheet-body" id="drafts-body"></div>
+  <div class="sheet-actions">
+    <button class="secondary" id="drafts-regenerate">↻ Regenerate</button>
+    <button class="primary" id="drafts-close">Close</button>
+  </div>
+</div>
+
 <!-- Floating "+ New job" button (existing client) -->
 <button class="fab" id="newjob-fab" title="Add a job for an existing client">
   <span class="plus">+</span>
@@ -1056,6 +1146,15 @@
   function todayISO() { return new Date().toISOString().split("T")[0]; }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  // Normalize a US-formatted phone string into a tel:/sms: friendly E.164.
+  // Used by the drafts sheet to build sms:+1...?body=... links.
+  function phoneHref(p) {
+    if (!p) return "";
+    const d = String(p).replace(/\D/g, "");
+    if (d.length === 10) return `+1${d}`;
+    if (d.length === 11) return `+${d}`;
+    return d ? `+${d}` : "";
   }
 
   // ── View-picker ──────────────────────────────────────────────────────
@@ -1235,6 +1334,13 @@
         handleTriedClick(btn);
       });
     });
+    // "✉️ Draft texts" button on New lead cards
+    trackEl.querySelectorAll("[data-drafts]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openDraftsSheet(btn.dataset.drafts);
+      });
+    });
 
     // Jump to the preserved column WITHOUT smooth-scroll (instant restoration)
     if (targetIdx > 0) {
@@ -1396,6 +1502,19 @@
     if (j.outreachAttempts > 0) pills.push(`<span class="pill outreach">${j.outreachAttempts}× outreach</span>`);
     if (j.customerResponded) pills.push(`<span class="pill responded">replied</span>`);
 
+    // "✉️ Draft texts" button — only on New lead cards. Opens a sheet with
+    // 3 AI-generated first-text-message options in Luke's voice.
+    let draftsRow = "";
+    if (stage === "🆕 New lead" && mode === "kanban") {
+      draftsRow = `
+        <div class="drafts-row">
+          <button type="button" class="drafts-btn" data-drafts="${escapeHtml(j.id)}">
+            ✉️ Draft texts
+          </button>
+        </div>
+      `;
+    }
+
     // "Tried contacting them" inline button — only for the active outreach
     // stages (New lead / Quoted / Contacted). Shown on kanban + contacted
     // list, NOT on booked / done lists (no follow-up needed there).
@@ -1438,6 +1557,7 @@
         ${meta.length ? `<div class="card-meta">${meta.join(`<span class="sep">·</span>`)}</div>` : ""}
         ${pills.length ? `<div class="card-bottom">${pills.join("")}</div>` : ""}
         ${notesBlock}
+        ${draftsRow}
         ${triedRow}
       </div>
     `;
@@ -2464,6 +2584,122 @@
       newjobSaveBtn.textContent = "Create job";
     }
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // ─── "Draft first text" sheet (New lead cards only) ─────────────────
+  // ─────────────────────────────────────────────────────────────────────
+  // Tapping ✉️ Draft texts on a New lead card → opens this sheet, hits the
+  // /api/ops?action=draft-messages endpoint, and renders 3 AI-generated
+  // message options in Luke's voice. Each option has Copy + Send-via-SMS.
+  const draftsBackdrop = document.getElementById("drafts-backdrop");
+  const draftsSheet    = document.getElementById("drafts-sheet");
+  const draftsBody     = document.getElementById("drafts-body");
+  const draftsTitle    = document.getElementById("drafts-title");
+  const draftsSub      = document.getElementById("drafts-sub");
+  const draftsClose    = document.getElementById("drafts-close");
+  const draftsRegen    = document.getElementById("drafts-regenerate");
+  let draftsCurrentJobId = null;
+  let draftsLastClientPhone = "";
+
+  async function openDraftsSheet(jobId) {
+    draftsCurrentJobId = jobId;
+    draftsBackdrop.classList.add("open");
+    draftsSheet.classList.add("open");
+    const j = findJob(jobId);
+    draftsTitle.textContent = j ? `Draft first text — ${j.clientName || j.jobId || "Lead"}` : "Draft first text";
+    draftsSub.textContent = "3 options based on this lead's context";
+    await loadDrafts(jobId);
+  }
+  function closeDraftsSheet() {
+    draftsBackdrop.classList.remove("open");
+    draftsSheet.classList.remove("open");
+    draftsCurrentJobId = null;
+  }
+  draftsClose.addEventListener("click", closeDraftsSheet);
+  draftsBackdrop.addEventListener("click", closeDraftsSheet);
+  draftsRegen.addEventListener("click", () => {
+    if (draftsCurrentJobId) loadDrafts(draftsCurrentJobId);
+  });
+
+  async function loadDrafts(jobId) {
+    draftsBody.innerHTML = `
+      <div id="drafts-loading">
+        <span class="spinner"></span>
+        Generating 3 drafts in your voice…
+      </div>
+    `;
+    draftsRegen.disabled = true;
+    try {
+      const params = new URLSearchParams({ action: "draft-messages" });
+      if (apiKey) params.set("key", apiKey);
+      const r = await fetch(`${apiBase}/api/ops?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      draftsLastClientPhone = data.clientPhone || "";
+      renderDrafts(data.drafts || []);
+    } catch (err) {
+      draftsBody.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:#a82a25">Couldn't generate drafts: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      draftsRegen.disabled = false;
+    }
+  }
+
+  function renderDrafts(drafts) {
+    if (!drafts.length) {
+      draftsBody.innerHTML = `<div class="empty" style="padding:24px;text-align:center;">No drafts returned. Try Regenerate.</div>`;
+      return;
+    }
+    const smsHref = phoneHref(draftsLastClientPhone);
+    draftsBody.innerHTML = drafts.map((d, i) => {
+      const safeText = escapeHtml(d.text || "");
+      // For the sms: link, body must be percent-encoded. Use encodeURIComponent.
+      const encodedBody = encodeURIComponent(d.text || "");
+      const smsLink = smsHref
+        ? `<a class="send-sms" href="sms:${smsHref}?body=${encodedBody}">💬 Send via Messages</a>`
+        : `<button class="send-sms" disabled title="No phone on file">💬 No phone</button>`;
+      return `
+        <div class="draft-card">
+          <div class="label">${escapeHtml(d.label || "Option " + (i + 1))}</div>
+          <div class="text" data-draft-text="${safeText}">${safeText}</div>
+          <div class="actions">
+            <button type="button" class="copy-btn" data-copy-idx="${i}">📋 Copy</button>
+            ${smsLink}
+          </div>
+        </div>
+      `;
+    }).join("");
+    // Wire up copy buttons
+    draftsBody.querySelectorAll(".copy-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const idx = parseInt(btn.dataset.copyIdx, 10);
+        const text = drafts[idx]?.text || "";
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.classList.add("copied");
+          btn.textContent = "✓ Copied";
+          setTimeout(() => {
+            btn.classList.remove("copied");
+            btn.textContent = "📋 Copy";
+          }, 1800);
+        } catch (err) {
+          // Fallback: select the text in the box so user can copy manually
+          const box = btn.closest(".draft-card").querySelector(".text");
+          if (box) {
+            const range = document.createRange();
+            range.selectNodeContents(box);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+          toast("Copy unavailable — text selected for manual copy", true);
+        }
+      });
+    });
+  }
 
   // ── Boot ─────────────────────────────────────────────────────────────
   (async () => {
