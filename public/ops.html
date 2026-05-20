@@ -1209,13 +1209,27 @@
   // free-form addresses via search-style queries — works whether the
   // address is canonical or just "123 Main St, Quakertown PA". Empty
   // address returns empty strings (callers must check).
-  function googleMapsUrl(addr) {
+  //
+  // Pre-clean: strip ", United States" / ", USA" / trailing country suffix
+  // that Google Places adds to widget-captured addresses. Maps doesn't
+  // care either way, but Zillow's address resolver matches better
+  // without it.
+  function cleanAddressForLink(addr) {
     if (!addr) return "";
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+    return String(addr)
+      .replace(/,\s*(United States|USA|US)\s*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  function googleMapsUrl(addr) {
+    const a = cleanAddressForLink(addr);
+    if (!a) return "";
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`;
   }
   function zillowUrl(addr) {
-    if (!addr) return "";
-    return `https://www.zillow.com/homes/${encodeURIComponent(addr)}_rb/`;
+    const a = cleanAddressForLink(addr);
+    if (!a) return "";
+    return `https://www.zillow.com/homes/${encodeURIComponent(a)}_rb/`;
   }
 
   // ── View-picker ──────────────────────────────────────────────────────
