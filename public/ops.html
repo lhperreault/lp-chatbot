@@ -2640,6 +2640,10 @@
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       draftsLastClientPhone = data.clientPhone || "";
+      const missing = Array.isArray(data.missingInfo) ? data.missingInfo : [];
+      draftsSub.textContent = missing.length
+        ? `Missing for accurate quote: ${missing.join(", ")}`
+        : "All info on hand — quote-ready drafts below";
       renderDrafts(data.drafts || []);
     } catch (err) {
       draftsBody.innerHTML = `<div class="empty" style="padding:24px;text-align:center;color:#a82a25">Couldn't generate drafts: ${escapeHtml(err.message)}</div>`;

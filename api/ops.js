@@ -1196,16 +1196,82 @@ PRICING / CONTEXT (use when generating drafts):
 - Windows note (only when house wash includes windows): "The windows get washed during the process but they don't dry perfectly spotless as if professionally cleaned. But they look great."
 - Pool warning (only when there's a pool): "Quick heads up on the pool — we'll do our best to spray away from it and keep the water and small sand particles out, but it's typically pretty inevitable that some gets in."
 
+═════════════════════════════════════════
+MISSING-INFO HEURISTICS (critical — drives the Discovery draft)
+═════════════════════════════════════════
+Before drafting, do a mental audit of the context. For the service(s) requested, which of these are MISSING from the data? List them internally, then ask about them in the Discovery draft.
+
+PER-SERVICE INFO CHECKLIST — what Luke needs to give an accurate quote:
+
+HOUSE WASH:
+  - Address (Luke can look up property online if missing — only ask if not provided)
+  - Square footage (footprint, not living space) — can look up online from address
+  - Stories (1, 2, 3, mixed) — can look up online sometimes
+  - Material (vinyl, brick, stucco, fiber cement) — only ask if odd
+  - All 4 sides, or partial? (front/back/sides)
+  - Cleanout gutters too? (separate $40–$100 add-on)
+
+DRIVEWAY:
+  - Address (so Luke can look up online)
+  - Approximate dimensions (e.g. "2 car wide, 30 ft long") — only ask if hard to tell from satellite
+  - Also include sidewalk / walkway to front door? (price impact, small)
+
+PATIO:
+  - Approximate dimensions (length × width)
+  - Material (concrete, paver, stone, brick)
+  - Around a pool? (triggers pool warning)
+
+DECK:
+  - Approximate dimensions
+  - Material — TREX / composite / wood? (critical — affects whether soft wash is appropriate)
+  - Sides (top, sides, underneath?)
+
+ROOF:
+  - Address (look up online)
+  - Material (shingle, metal, slate)
+  - Stories
+
+FENCE:
+  - Linear feet OR sides of property
+  - Material (wood / vinyl / aluminum)
+  - One side or both sides
+
+GUTTERS (cleanout or just the outside):
+  - Linear feet (or "match the house perimeter")
+  - Stories (above-2-story has a surcharge)
+  - "Cleaned in last 3 years?" — affects price
+
+DECISION RULE FOR DISCOVERY DRAFT:
+  1. Identify the most impactful missing fields (using the checklist above).
+  2. Ask for ONLY the ones that materially change the price AND that Luke can't easily look up online from an address. (Address itself, dimensions for patios/decks, material for decks, sides for fence, etc.)
+  3. If the customer gave an address, DON'T ask for sqft/stories — Luke will look those up. Phrase the message as "I'll look up the property details now and send you an exact estimate" or similar.
+  4. If service includes "patio" or "deck" with no dimensions → always ask for those.
+  5. If service is a partial house wash → ask which sides.
+  6. Keep questions to 1–3 max per draft. Don't interrogate them.
+
+DECISION RULE FOR QUOTE-READY DRAFT:
+  - Always generate this option even if data is sparse — Luke might already have looked it up online or have the info in his head.
+  - Use any sqft / stories / address / dimensions data available. If a key number is missing, use REASONABLE ASSUMPTIONS based on the context and mention you assumed (e.g., "based on what I see online" or "for a 1-story home around 1,200 sqft").
+  - Pick a single specific quote (not a wide range). Trust the pricing brackets above.
+  - Include soft-wash + windows + pool explainers as relevant.
+  - Propose 2 specific dates with day-of-week.
+
+DECISION RULE FOR THIRD DRAFT:
+  - If they left a voicemail OR Luke called and couldn't reach → "Voicemail follow-up" with a quick check-in.
+  - If they came via an ad and we have very little info → "Ad-click intro" thanking them + asking timeline.
+  - If we have ALL the info already → "Soft close" — confirm details + propose a date.
+
 OUTPUT FORMAT — return STRICT JSON only, no preamble, no markdown:
 {
+  "missingInfo": ["address", "patio dimensions", ...],   // what's missing for accurate quoting
   "drafts": [
-    { "label": "Discovery — confirm scope before quoting", "text": "Hi [Name],..." },
+    { "label": "Discovery — ask for [specific gaps]", "text": "Hi [Name],..." },
     { "label": "Quote-ready estimate", "text": "Hi [Name],..." },
-    { "label": "Voicemail follow-up", "text": "Hi [Name],..." }
+    { "label": "Soft follow-up" OR "Voicemail follow-up" OR "Ad-click intro", "text": "Hi [Name],..." }
   ]
 }
 
-The three drafts should be DIFFERENT angles — pick the 3 most appropriate to the available context. If we have detailed services + scope but no quote yet, lean into Quote-ready. If we have only a name and partial info, lean into Discovery. If they came via voicemail or didn't pick up, do the Voicemail follow-up. Each draft should be self-contained and immediately sendable — no placeholders, no [brackets]. Use the customer's actual first name from the context. Today's date: ${todayISO()}.`;
+Each draft must be self-contained and immediately sendable — no placeholders, no [brackets]. Use the customer's actual first name from the context. Today's date: ${todayISO()}.`;
 
 async function handleDraftMessages(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -1300,8 +1366,11 @@ async function handleDraftMessages(req, res) {
     return res.status(500).json({ error: "AI returned no drafts", raw: rawReply.slice(0, 500) });
   }
 
+  const missingInfo = Array.isArray(parsed?.missingInfo) ? parsed.missingInfo : [];
+
   return res.status(200).json({
     drafts,
+    missingInfo,
     usage: response.usage,
     clientPhone: client?.fields?.["Phone"] || "",
     clientName:  client?.fields?.["Full name"] || client?.fields?.["Name"] || "",
